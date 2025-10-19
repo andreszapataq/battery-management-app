@@ -80,6 +80,11 @@ export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPan
                             Calibración
                           </Badge>
                         )}
+                        {alert.type === "deep-charge-complete" && (
+                          <Badge className="ml-2 bg-green-100 text-green-700">
+                            Carga Completada
+                          </Badge>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => onDismiss(alert.id)} className="h-6 w-6 p-0">
                           <X className="h-4 w-4" />
                         </Button>

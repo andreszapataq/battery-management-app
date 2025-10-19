@@ -1,6 +1,6 @@
 export type EquipmentStatus = "charging" | "ready" | "in-use" | "at-clinic" | "maintenance"
 export type Location = "office" | "clinic"
-export type AlertType = "charge-complete" | "deep-charge-needed" | "overdue-charge" | "maintenance-due" | "clinic-idle" | "battery-calibration"
+export type AlertType = "charge-complete" | "deep-charge-needed" | "overdue-charge" | "maintenance-due" | "clinic-idle" | "battery-calibration" | "deep-charge-complete"
 export type AlertSeverity = "info" | "warning" | "critical"
 
 export interface Equipment {

@@ -17,6 +17,7 @@ interface EquipmentCardProps {
   onStartCharging: (id: string, isDeepCharge: boolean) => void
   onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
   onStopCharging: (id: string) => void
+  onStartDeepCharge: (id: string) => void
 }
 
 export function EquipmentCard({
@@ -25,15 +26,21 @@ export function EquipmentCard({
   onStartCharging,
   onCheckOut,
   onStopCharging,
+  onStartDeepCharge,
 }: EquipmentCardProps) {
   const [showClinicDialog, setShowClinicDialog] = useState(false)
   const [clinicName, setClinicName] = useState("")
   const [clinicCity, setClinicCity] = useState("")
+  const [showDeepChargeDialog, setShowDeepChargeDialog] = useState(false)
 
   const progress = getChargingProgress(equipment)
   const timeRemaining = getTimeRemaining(equipment)
   const daysSinceUse = getDaysSinceLastUse(equipment)
-  const needsDeepCharge = daysSinceUse >= 3
+  
+  // Check if deep charge is needed (5 days for clinic equipment)
+  const needsDeepCharge = equipment.status === "at-clinic" && equipment.lastDisconnectedAt 
+    ? (new Date().getTime() - new Date(equipment.lastDisconnectedAt).getTime()) / (1000 * 60 * 60 * 24) >= 5
+    : daysSinceUse >= 5
 
   const statusConfig = {
     charging: { label: "Cargando", color: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -62,6 +69,11 @@ export function EquipmentCard({
   const handleDisconnectFromPatient = () => {
     // Change status from in-use back to at-clinic
     onStopCharging(equipment.id)
+  }
+
+  const handleStartDeepCharge = () => {
+    onStartDeepCharge(equipment.id)
+    setShowDeepChargeDialog(false)
   }
 
   return (
@@ -130,7 +142,7 @@ export function EquipmentCard({
             <span>{equipment.location === "office" ? "Oficina" : "Clínica"}</span>
           </div>
 
-          {(equipment.status === "in-use" || equipment.status === "at-clinic") && equipment.clinicName && (
+          {(equipment.status === "in-use" || equipment.status === "at-clinic" || (equipment.status === "charging" && equipment.location === "clinic")) && equipment.clinicName && (
             <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 rounded-lg p-2 border border-blue-200">
               <Building2 className="h-4 w-4" />
               <div>
@@ -148,7 +160,7 @@ export function EquipmentCard({
               <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs text-orange-700">
                 <p className="font-semibold">Requiere carga profunda</p>
-                <p>{daysSinceUse} días sin uso</p>
+                <p>{Math.floor(daysSinceUse)} días sin uso</p>
               </div>
             </div>
           )}
@@ -187,9 +199,22 @@ export function EquipmentCard({
             )}
 
             {equipment.status === "at-clinic" && (
-              <Button onClick={handleConnectToPatient} className="flex-1 bg-blue-600 hover:bg-blue-700">
-                Conectar a Paciente
-              </Button>
+              <>
+                <Button onClick={handleConnectToPatient} className="flex-1 bg-blue-600 hover:bg-blue-700">
+                  Conectar a Paciente
+                </Button>
+                {needsDeepCharge && (
+                  <Button 
+                    onClick={() => setShowDeepChargeDialog(true)} 
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400 bg-white"
+                  >
+                    <span className="text-amber-600 mr-1">[⚡]</span>
+                    Carga Profunda
+                  </Button>
+                )}
+              </>
             )}
 
             {equipment.status === "in-use" && (
@@ -264,6 +289,45 @@ export function EquipmentCard({
               className="flex-1 bg-indigo-600 hover:bg-indigo-700"
             >
               Enviar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deep Charge Confirmation Dialog */}
+      <Dialog open={showDeepChargeDialog} onOpenChange={setShowDeepChargeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">Iniciar Carga Profunda</DialogTitle>
+            <p className="text-sm text-gray-600">El equipo llevará 12 horas en carga profunda para despegar la batería</p>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+              <p className="text-sm text-amber-700">
+                <span className="font-semibold">Equipo:</span> {equipment.code}
+              </p>
+              <p className="text-sm text-amber-700">
+                <span className="font-semibold">Modelo:</span> {equipment.model}
+              </p>
+              <p className="text-sm text-amber-700">
+                <span className="font-semibold">Clínica:</span> {equipment.clinicName} - {equipment.clinicCity}
+              </p>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+              <p className="text-sm text-blue-700 font-medium">
+                ⚠️ El equipo permanecerá en la clínica durante la carga profunda
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowDeepChargeDialog(false)} className="flex-1">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleStartDeepCharge}
+              className="flex-1 bg-amber-600 hover:bg-amber-700"
+            >
+              Iniciar Carga
             </Button>
           </div>
         </DialogContent>

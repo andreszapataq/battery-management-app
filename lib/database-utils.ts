@@ -180,31 +180,6 @@ export async function getAlertsByEquipmentId(equipmentId: string): Promise<Alert
   return data.map(convertAlertRowToAlert)
 }
 
-export async function createAlert(alert: Omit<Alert, 'id' | 'createdAt' | 'updatedAt'>): Promise<Alert> {
-  const { data, error } = await supabase
-    .from('alerts')
-    .insert({
-      equipment_id: alert.equipmentId,
-      equipment_code: alert.equipmentCode,
-      type: alert.type,
-      severity: alert.severity,
-      message: alert.message,
-      timestamp: alert.timestamp,
-      dismissed: alert.dismissed,
-      dismissed_at: alert.dismissedAt || null,
-      dismissed_by: alert.dismissedBy || null,
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Error creating alert:', error)
-    throw error
-  }
-
-  return convertAlertRowToAlert(data)
-}
-
 export async function updateAlert(id: string, updates: Partial<Alert>): Promise<Alert> {
   const updateData: any = {}
   
@@ -337,6 +312,59 @@ export async function getActiveAlerts(): Promise<Alert[]> {
 
   if (error) {
     console.error('Error fetching active alerts:', error)
+    throw error
+  }
+
+  return data.map(convertAlertRowToAlert)
+}
+
+export async function createAlert(alert: Omit<Alert, 'id' | 'createdAt' | 'updatedAt'>): Promise<Alert> {
+  const { data, error } = await supabase
+    .from('alerts')
+    .insert({
+      equipment_id: alert.equipmentId,
+      equipment_code: alert.equipmentCode,
+      type: alert.type,
+      severity: alert.severity,
+      message: alert.message,
+      timestamp: alert.timestamp,
+      dismissed: alert.dismissed,
+      dismissed_at: alert.dismissedAt || null,
+      dismissed_by: alert.dismissedBy || null,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Error creating alert:', error)
+    throw error
+  }
+
+  return convertAlertRowToAlert(data)
+}
+
+export async function createMultipleAlerts(alerts: Omit<Alert, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<Alert[]> {
+  if (alerts.length === 0) return []
+
+  const alertData = alerts.map(alert => ({
+    equipment_id: alert.equipmentId,
+    equipment_code: alert.equipmentCode,
+    type: alert.type,
+    severity: alert.severity,
+    message: alert.message,
+    timestamp: alert.timestamp,
+    dismissed: alert.dismissed,
+    dismissed_at: alert.dismissedAt || null,
+    dismissed_by: alert.dismissedBy || null,
+  }))
+
+  const { data, error } = await supabase
+    .from('alerts')
+    .insert(alertData)
+    .select()
+
+  if (error) {
+    console.error('Error creating multiple alerts:', error)
     throw error
   }
 

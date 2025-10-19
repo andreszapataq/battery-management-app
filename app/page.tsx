@@ -15,7 +15,8 @@ import {
   updateEquipment, 
   createEquipment,
   dismissAlert,
-  logEquipmentChange 
+  logEquipmentChange,
+  createMultipleAlerts
 } from "@/lib/database-utils"
 import { supabase } from "@/lib/supabase"
 
@@ -86,13 +87,40 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    const updateStatus = () => {
+    const updateStatus = async () => {
       setEquipment((currentEquipment) => {
         const updatedEquipment = updateEquipmentStatuses(currentEquipment)
-        const newAlerts = checkAlerts(updatedEquipment)
-        setAlerts(newAlerts)
         return updatedEquipment
       })
+      
+      // Update alerts separately
+      try {
+        const currentAlerts = await getAllAlerts()
+        const newAlerts = checkAlerts(equipment)
+        
+        // Filter out alerts that already exist (by equipment + type + severity + message)
+        const existingAlertKeys = new Set(currentAlerts.map(alert => 
+          `${alert.equipmentId}-${alert.type}-${alert.severity}-${alert.message}`
+        ))
+        
+        const uniqueNewAlerts = newAlerts.filter(alert => {
+          const alertKey = `${alert.equipmentId}-${alert.type}-${alert.severity}-${alert.message}`
+          return !existingAlertKeys.has(alertKey)
+        })
+        
+        // Save only new alerts
+        if (uniqueNewAlerts.length > 0) {
+          const savedAlerts = await createMultipleAlerts(uniqueNewAlerts)
+          setAlerts([...currentAlerts, ...savedAlerts])
+        } else {
+          setAlerts(currentAlerts)
+        }
+      } catch (error) {
+        console.error('Error updating alerts:', error)
+        // Fallback to local generation
+        const newAlerts = checkAlerts(equipment)
+        setAlerts(newAlerts)
+      }
     }
 
     // Run initial check after a short delay
@@ -247,6 +275,17 @@ export default function Home() {
           status: "at-clinic" as const,
           lastDisconnectedAt: new Date().toISOString(),
         }
+      } else if (equipmentToUpdate.status === "charging" && equipmentToUpdate.location === "clinic") {
+        // If equipment is charging at clinic, stop charging but keep clinic info
+        newValue = {
+          ...equipmentToUpdate,
+          status: "at-clinic" as const,
+          chargingStartTime: null,
+          isDeepCharge: false,
+          // Preserve clinic information
+          clinicName: equipmentToUpdate.clinicName,
+          clinicCity: equipmentToUpdate.clinicCity,
+        }
       } else {
         // Otherwise stop charging at office
         newValue = {
@@ -262,6 +301,31 @@ export default function Home() {
       await logEquipmentChange(equipmentId, 'stop_charging', oldValue, newValue, 'Carga detenida')
     } catch (error) {
       console.error('Error stopping charging:', error)
+    }
+  }
+
+  const handleStartDeepCharge = async (equipmentId: string) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const oldValue = { ...equipmentToUpdate }
+      const newValue = {
+        ...equipmentToUpdate,
+        status: "charging" as const,
+        location: "clinic" as const, // Explicitly keep location as clinic
+        chargingStartTime: new Date().toISOString(),
+        isDeepCharge: true,
+        // Preserve clinic information
+        clinicName: equipmentToUpdate.clinicName,
+        clinicCity: equipmentToUpdate.clinicCity,
+      }
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'start_deep_charge', oldValue, newValue, `Inicio de carga profunda en ${equipmentToUpdate.clinicName} - ${equipmentToUpdate.clinicCity}`)
+    } catch (error) {
+      console.error('Error starting deep charge:', error)
     }
   }
 
@@ -350,6 +414,7 @@ export default function Home() {
           onStartCharging={handleStartCharging}
           onCheckOut={handleCheckOut}
           onStopCharging={handleStopCharging}
+          onStartDeepCharge={handleStartDeepCharge}
         />
 
         {/* Dialogs */}
