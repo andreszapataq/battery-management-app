@@ -5,7 +5,7 @@ interface EquipmentDashboardProps {
   equipment: Equipment[]
   onMarkCharged: (id: string) => void
   onStartCharging: (id: string, isDeepCharge: boolean) => void
-  onCheckOut: (id: string, clinicName: string) => void
+  onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
   onStopCharging: (id: string) => void
 }
 

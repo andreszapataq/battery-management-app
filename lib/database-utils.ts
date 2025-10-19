@@ -18,6 +18,7 @@ export function convertEquipmentRowToEquipment(row: EquipmentRow): Equipment {
     isDeepCharge: row.is_deep_charge,
     notes: row.notes || undefined,
     clinicName: row.clinic_name || undefined,
+    clinicCity: row.clinic_city || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -91,6 +92,7 @@ export async function createEquipment(equipment: Omit<Equipment, 'id' | 'created
       is_deep_charge: equipment.isDeepCharge,
       notes: equipment.notes || null,
       clinic_name: equipment.clinicName || null,
+      clinic_city: equipment.clinicCity || null,
     })
     .select()
     .single()
@@ -119,6 +121,7 @@ export async function updateEquipment(id: string, updates: Partial<Equipment>): 
   if (updates.isDeepCharge !== undefined) updateData.is_deep_charge = updates.isDeepCharge
   if (updates.notes !== undefined) updateData.notes = updates.notes || null
   if (updates.clinicName !== undefined) updateData.clinic_name = updates.clinicName || null
+  if (updates.clinicCity !== undefined) updateData.clinic_city = updates.clinicCity || null
 
   const { data, error } = await supabase
     .from('equipment')

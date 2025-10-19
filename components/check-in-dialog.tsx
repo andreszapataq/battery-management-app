@@ -40,7 +40,7 @@ export function CheckInDialog({ open, onOpenChange, equipment, onCheckIn }: Chec
                   <p className="text-xs text-gray-500">Lote: {eq.lot}</p>
                   <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
                     <MapPin className="h-3 w-3" />
-                    {eq.clinicName ? `En ${eq.clinicName}` : "En clínica"}
+                    {eq.clinicName ? `En ${eq.clinicName}${eq.clinicCity ? ` - ${eq.clinicCity}` : ''}` : "En clínica"}
                   </div>
                 </div>
                 <Button onClick={() => handleCheckIn(eq.id)} className="bg-indigo-600 hover:bg-indigo-700">

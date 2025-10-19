@@ -15,7 +15,7 @@ interface EquipmentCardProps {
   equipment: Equipment
   onMarkCharged: (id: string) => void
   onStartCharging: (id: string, isDeepCharge: boolean) => void
-  onCheckOut: (id: string, clinicName: string) => void
+  onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
   onStopCharging: (id: string) => void
 }
 
@@ -28,6 +28,7 @@ export function EquipmentCard({
 }: EquipmentCardProps) {
   const [showClinicDialog, setShowClinicDialog] = useState(false)
   const [clinicName, setClinicName] = useState("")
+  const [clinicCity, setClinicCity] = useState("")
 
   const progress = getChargingProgress(equipment)
   const timeRemaining = getTimeRemaining(equipment)
@@ -45,9 +46,10 @@ export function EquipmentCard({
   const status = statusConfig[equipment.status]
 
   const handleSendToClinic = () => {
-    if (clinicName.trim()) {
-      onCheckOut(equipment.id, clinicName.trim())
+    if (clinicName.trim() && clinicCity.trim()) {
+      onCheckOut(equipment.id, clinicName.trim(), clinicCity.trim())
       setClinicName("")
+      setClinicCity("")
       setShowClinicDialog(false)
     }
   }
@@ -131,7 +133,12 @@ export function EquipmentCard({
           {(equipment.status === "in-use" || equipment.status === "at-clinic") && equipment.clinicName && (
             <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 rounded-lg p-2 border border-blue-200">
               <Building2 className="h-4 w-4" />
-              <span className="font-medium">{equipment.clinicName}</span>
+              <div>
+                <span className="font-medium">{equipment.clinicName}</span>
+                {equipment.clinicCity && (
+                  <span className="text-blue-600 ml-1">- {equipment.clinicCity}</span>
+                )}
+              </div>
             </div>
           )}
 
@@ -218,7 +225,21 @@ export function EquipmentCard({
                 value={clinicName}
                 onChange={(e) => setClinicName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && clinicName.trim()) {
+                  if (e.key === "Enter" && clinicName.trim() && clinicCity.trim()) {
+                    handleSendToClinic()
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="clinic-city">Ciudad *</Label>
+              <Input
+                id="clinic-city"
+                placeholder="Ej: Bogotá"
+                value={clinicCity}
+                onChange={(e) => setClinicCity(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && clinicName.trim() && clinicCity.trim()) {
                     handleSendToClinic()
                   }
                 }}
@@ -239,7 +260,7 @@ export function EquipmentCard({
             </Button>
             <Button
               onClick={handleSendToClinic}
-              disabled={!clinicName.trim()}
+              disabled={!clinicName.trim() || !clinicCity.trim()}
               className="flex-1 bg-indigo-600 hover:bg-indigo-700"
             >
               Enviar

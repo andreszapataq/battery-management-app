@@ -138,6 +138,7 @@ export default function Home() {
         chargingStartTime: now.toISOString(),
         lastUsedDate: now.toISOString(),
         clinicName: undefined,
+        clinicCity: undefined,
         lastDisconnectedAt: null,
         isDeepCharge: needsDeepCharge,
       }
@@ -208,7 +209,7 @@ export default function Home() {
     }
   }
 
-  const handleCheckOut = async (equipmentId: string, clinicName: string) => {
+  const handleCheckOut = async (equipmentId: string, clinicName: string, clinicCity: string) => {
     try {
       const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
       if (!equipmentToUpdate) return
@@ -219,12 +220,13 @@ export default function Home() {
         status: "at-clinic" as const,
         location: "clinic" as const,
         clinicName,
+        clinicCity,
         lastDisconnectedAt: new Date().toISOString(),
       }
 
       const updatedEquipment = await updateEquipment(equipmentId, newValue)
       setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
-      await logEquipmentChange(equipmentId, 'check_out', oldValue, newValue, `Enviado a clínica: ${clinicName}`)
+      await logEquipmentChange(equipmentId, 'check_out', oldValue, newValue, `Enviado a clínica: ${clinicName} - ${clinicCity}`)
     } catch (error) {
       console.error('Error checking out equipment:', error)
     }

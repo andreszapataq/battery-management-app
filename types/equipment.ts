@@ -18,6 +18,7 @@ export interface Equipment {
   isDeepCharge: boolean
   notes?: string
   clinicName?: string
+  clinicCity?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -64,6 +65,7 @@ export interface EquipmentRow {
   is_deep_charge: boolean
   notes: string | null
   clinic_name: string | null
+  clinic_city: string | null
   created_at: string
   updated_at: string
 }
