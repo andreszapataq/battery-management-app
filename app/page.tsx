@@ -9,6 +9,15 @@ import { Button } from "@/components/ui/button"
 import { Plus, Bell } from "lucide-react"
 import type { Equipment, Alert } from "@/types/equipment"
 import { checkAlerts, updateEquipmentStatuses } from "@/lib/equipment-utils"
+import { 
+  getAllEquipment, 
+  getAllAlerts, 
+  updateEquipment, 
+  createEquipment,
+  dismissAlert,
+  logEquipmentChange 
+} from "@/lib/database-utils"
+import { supabase } from "@/lib/supabase"
 
 export default function Home() {
   const [equipment, setEquipment] = useState<Equipment[]>([])
@@ -17,20 +26,64 @@ export default function Home() {
   const [showCheckInDialog, setShowCheckInDialog] = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
 
-  // Load equipment from localStorage on mount
+  // Load equipment and alerts from Supabase on mount
   useEffect(() => {
-    const stored = localStorage.getItem("topivac-equipment")
-    if (stored) {
-      setEquipment(JSON.parse(stored))
+    const loadData = async () => {
+      try {
+        const [equipmentData, alertsData] = await Promise.all([
+          getAllEquipment(),
+          getAllAlerts()
+        ])
+        setEquipment(equipmentData)
+        setAlerts(alertsData)
+      } catch (error) {
+        console.error('Error loading data:', error)
+      }
     }
+
+    loadData()
   }, [])
 
-  // Save equipment to localStorage whenever it changes
+  // Set up real-time subscriptions
   useEffect(() => {
-    if (equipment.length > 0) {
-      localStorage.setItem("topivac-equipment", JSON.stringify(equipment))
+    // Subscribe to equipment changes
+    const equipmentSubscription = supabase
+      .channel('equipment-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'equipment' },
+        async () => {
+          try {
+            const equipmentData = await getAllEquipment()
+            setEquipment(equipmentData)
+          } catch (error) {
+            console.error('Error syncing equipment:', error)
+          }
+        }
+      )
+      .subscribe()
+
+    // Subscribe to alerts changes
+    const alertsSubscription = supabase
+      .channel('alerts-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'alerts' },
+        async () => {
+          try {
+            const alertsData = await getAllAlerts()
+            setAlerts(alertsData)
+          } catch (error) {
+            console.error('Error syncing alerts:', error)
+          }
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscriptions
+    return () => {
+      equipmentSubscription.unsubscribe()
+      alertsSubscription.unsubscribe()
     }
-  }, [equipment])
+  }, [])
 
   useEffect(() => {
     const updateStatus = () => {
@@ -54,117 +107,160 @@ export default function Home() {
     }
   }, []) // Empty dependency array - runs once on mount
 
-  const handleAddEquipment = (newEquipment: Equipment) => {
-    setEquipment([...equipment, newEquipment])
-    setShowAddDialog(false)
+  const handleAddEquipment = async (newEquipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const createdEquipment = await createEquipment(newEquipment)
+      setEquipment([...equipment, createdEquipment])
+      await logEquipmentChange(createdEquipment.id, 'equipment_created', null, createdEquipment, 'Nuevo equipo agregado')
+      setShowAddDialog(false)
+    } catch (error) {
+      console.error('Error adding equipment:', error)
+    }
   }
 
-  const handleCheckIn = (equipmentId: string) => {
-    const updated = equipment.map((eq) => {
-      if (eq.id === equipmentId) {
-        const now = new Date()
-        const lastUsed = eq.lastUsedDate ? new Date(eq.lastUsedDate) : null
-        const daysSinceUse = lastUsed ? (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24) : 0
-        
-        // Determine if deep charge is needed based on days since last use
-        const needsDeepCharge = daysSinceUse >= 5
-        
-        return {
-          ...eq,
-          status: "charging" as const,
-          location: "office" as const,
-          chargingStartTime: now.toISOString(),
-          lastUsedDate: now.toISOString(),
-          clinicName: undefined,
+  const handleCheckIn = async (equipmentId: string) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const now = new Date()
+      const lastUsed = equipmentToUpdate.lastUsedDate ? new Date(equipmentToUpdate.lastUsedDate) : null
+      const daysSinceUse = lastUsed ? (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24) : 0
+      
+      // Determine if deep charge is needed based on days since last use
+      const needsDeepCharge = daysSinceUse >= 5
+      
+      const oldValue = { ...equipmentToUpdate }
+      const newValue = {
+        ...equipmentToUpdate,
+        status: "charging" as const,
+        location: "office" as const,
+        chargingStartTime: now.toISOString(),
+        lastUsedDate: now.toISOString(),
+        clinicName: undefined,
+        lastDisconnectedAt: null,
+        isDeepCharge: needsDeepCharge,
+      }
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'check_in', oldValue, newValue, `Reingreso desde clínica${needsDeepCharge ? ' - Carga profunda requerida' : ''}`)
+      setShowCheckInDialog(false)
+    } catch (error) {
+      console.error('Error checking in equipment:', error)
+    }
+  }
+
+  const handleMarkCharged = async (equipmentId: string) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const oldValue = { ...equipmentToUpdate }
+      const newValue = {
+        ...equipmentToUpdate,
+        status: "ready" as const,
+        batteryLevel: 100,
+        chargingStartTime: null,
+        lastChargedDate: new Date().toISOString(),
+        isDeepCharge: false,
+      }
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'mark_charged', oldValue, newValue, 'Equipo marcado como cargado')
+    } catch (error) {
+      console.error('Error marking equipment as charged:', error)
+    }
+  }
+
+  const handleStartCharging = async (equipmentId: string, isDeepCharge = false) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const oldValue = { ...equipmentToUpdate }
+      let newValue
+
+      // If equipment is at clinic, connect to patient
+      if (equipmentToUpdate.status === "at-clinic") {
+        newValue = {
+          ...equipmentToUpdate,
+          status: "in-use" as const,
+          lastUsedDate: new Date().toISOString(),
           lastDisconnectedAt: null,
-          isDeepCharge: needsDeepCharge,
         }
-      }
-      return eq
-    })
-    setEquipment(updated)
-    setShowCheckInDialog(false)
-  }
-
-  const handleMarkCharged = (equipmentId: string) => {
-    const updated = equipment.map((eq) => {
-      if (eq.id === equipmentId) {
-        return {
-          ...eq,
-          status: "ready" as const,
-          batteryLevel: 100,
-          chargingStartTime: null,
-          lastChargedDate: new Date().toISOString(),
-        }
-      }
-      return eq
-    })
-    setEquipment(updated)
-  }
-
-  const handleStartCharging = (equipmentId: string, isDeepCharge = false) => {
-    const updated = equipment.map((eq) => {
-      if (eq.id === equipmentId) {
-        // If equipment is at clinic, connect to patient
-        if (eq.status === "at-clinic") {
-          return {
-            ...eq,
-            status: "in-use" as const,
-            lastUsedDate: new Date().toISOString(),
-            lastDisconnectedAt: null,
-          }
-        }
+      } else {
         // Otherwise start charging
-        return {
-          ...eq,
+        newValue = {
+          ...equipmentToUpdate,
           status: "charging" as const,
           chargingStartTime: new Date().toISOString(),
           isDeepCharge,
         }
       }
-      return eq
-    })
-    setEquipment(updated)
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'start_charging', oldValue, newValue, isDeepCharge ? 'Inicio de carga profunda' : 'Inicio de carga normal')
+    } catch (error) {
+      console.error('Error starting charging:', error)
+    }
   }
 
-  const handleCheckOut = (equipmentId: string, clinicName: string) => {
-    const updated = equipment.map((eq) => {
-      if (eq.id === equipmentId) {
-        return {
-          ...eq,
+  const handleCheckOut = async (equipmentId: string, clinicName: string) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const oldValue = { ...equipmentToUpdate }
+      const newValue = {
+        ...equipmentToUpdate,
+        status: "at-clinic" as const,
+        location: "clinic" as const,
+        clinicName,
+        lastDisconnectedAt: new Date().toISOString(),
+      }
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'check_out', oldValue, newValue, `Enviado a clínica: ${clinicName}`)
+    } catch (error) {
+      console.error('Error checking out equipment:', error)
+    }
+  }
+
+  const handleStopCharging = async (equipmentId: string) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const oldValue = { ...equipmentToUpdate }
+      let newValue
+
+      // If equipment is in use at clinic, disconnect from patient
+      if (equipmentToUpdate.status === "in-use" && equipmentToUpdate.location === "clinic") {
+        newValue = {
+          ...equipmentToUpdate,
           status: "at-clinic" as const,
-          location: "clinic" as const,
-          clinicName,
           lastDisconnectedAt: new Date().toISOString(),
         }
-      }
-      return eq
-    })
-    setEquipment(updated)
-  }
-
-  const handleStopCharging = (equipmentId: string) => {
-    const updated = equipment.map((eq) => {
-      if (eq.id === equipmentId) {
-        // If equipment is in use at clinic, disconnect from patient
-        if (eq.status === "in-use" && eq.location === "clinic") {
-          return {
-            ...eq,
-            status: "at-clinic" as const,
-            lastDisconnectedAt: new Date().toISOString(),
-          }
-        }
+      } else {
         // Otherwise stop charging at office
-        return {
-          ...eq,
+        newValue = {
+          ...equipmentToUpdate,
           status: "ready" as const,
           chargingStartTime: null,
           isDeepCharge: false,
         }
       }
-      return eq
-    })
-    setEquipment(updated)
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'stop_charging', oldValue, newValue, 'Carga detenida')
+    } catch (error) {
+      console.error('Error stopping charging:', error)
+    }
   }
 
   const activeAlerts = alerts.filter((a) => !a.dismissed)
@@ -268,8 +364,13 @@ export default function Home() {
           open={showAlerts}
           onOpenChange={setShowAlerts}
           alerts={alerts}
-          onDismiss={(alertId) => {
-            setAlerts(alerts.map((a) => (a.id === alertId ? { ...a, dismissed: true } : a)))
+          onDismiss={async (alertId) => {
+            try {
+              const updatedAlert = await dismissAlert(alertId)
+              setAlerts(alerts.map((a) => (a.id === alertId ? updatedAlert : a)))
+            } catch (error) {
+              console.error('Error dismissing alert:', error)
+            }
           }}
         />
       </div>
