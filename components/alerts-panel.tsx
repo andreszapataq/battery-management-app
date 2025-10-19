@@ -75,6 +75,11 @@ export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPan
                           {alert.severity === "warning" && "Advertencia"}
                           {alert.severity === "critical" && "Crítico"}
                         </Badge>
+                        {alert.type === "battery-calibration" && (
+                          <Badge className="ml-2 bg-purple-100 text-purple-700">
+                            Calibración
+                          </Badge>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => onDismiss(alert.id)} className="h-6 w-6 p-0">
                           <X className="h-4 w-4" />
                         </Button>

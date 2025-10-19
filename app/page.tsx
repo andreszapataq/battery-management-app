@@ -62,14 +62,22 @@ export default function Home() {
   const handleCheckIn = (equipmentId: string) => {
     const updated = equipment.map((eq) => {
       if (eq.id === equipmentId) {
+        const now = new Date()
+        const lastUsed = eq.lastUsedDate ? new Date(eq.lastUsedDate) : null
+        const daysSinceUse = lastUsed ? (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24) : 0
+        
+        // Determine if deep charge is needed based on days since last use
+        const needsDeepCharge = daysSinceUse >= 5
+        
         return {
           ...eq,
           status: "charging" as const,
           location: "office" as const,
-          chargingStartTime: new Date().toISOString(),
-          lastUsedDate: new Date().toISOString(),
+          chargingStartTime: now.toISOString(),
+          lastUsedDate: now.toISOString(),
           clinicName: undefined,
           lastDisconnectedAt: null,
+          isDeepCharge: needsDeepCharge,
         }
       }
       return eq
