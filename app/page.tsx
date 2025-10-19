@@ -1,0 +1,270 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { EquipmentDashboard } from "@/components/equipment-dashboard"
+import { AddEquipmentDialog } from "@/components/add-equipment-dialog"
+import { CheckInDialog } from "@/components/check-in-dialog"
+import { AlertsPanel } from "@/components/alerts-panel"
+import { Button } from "@/components/ui/button"
+import { Plus, Bell } from "lucide-react"
+import type { Equipment, Alert } from "@/types/equipment"
+import { checkAlerts, updateEquipmentStatuses } from "@/lib/equipment-utils"
+
+export default function Home() {
+  const [equipment, setEquipment] = useState<Equipment[]>([])
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [showAddDialog, setShowAddDialog] = useState(false)
+  const [showCheckInDialog, setShowCheckInDialog] = useState(false)
+  const [showAlerts, setShowAlerts] = useState(false)
+
+  // Load equipment from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("topivac-equipment")
+    if (stored) {
+      setEquipment(JSON.parse(stored))
+    }
+  }, [])
+
+  // Save equipment to localStorage whenever it changes
+  useEffect(() => {
+    if (equipment.length > 0) {
+      localStorage.setItem("topivac-equipment", JSON.stringify(equipment))
+    }
+  }, [equipment])
+
+  useEffect(() => {
+    const updateStatus = () => {
+      setEquipment((currentEquipment) => {
+        const updatedEquipment = updateEquipmentStatuses(currentEquipment)
+        const newAlerts = checkAlerts(updatedEquipment)
+        setAlerts(newAlerts)
+        return updatedEquipment
+      })
+    }
+
+    // Run initial check after a short delay
+    const initialTimeout = setTimeout(updateStatus, 1000)
+
+    // Then check every minute
+    const interval = setInterval(updateStatus, 60000)
+
+    return () => {
+      clearTimeout(initialTimeout)
+      clearInterval(interval)
+    }
+  }, []) // Empty dependency array - runs once on mount
+
+  const handleAddEquipment = (newEquipment: Equipment) => {
+    setEquipment([...equipment, newEquipment])
+    setShowAddDialog(false)
+  }
+
+  const handleCheckIn = (equipmentId: string) => {
+    const updated = equipment.map((eq) => {
+      if (eq.id === equipmentId) {
+        return {
+          ...eq,
+          status: "charging" as const,
+          location: "office" as const,
+          chargingStartTime: new Date().toISOString(),
+          lastUsedDate: new Date().toISOString(),
+          clinicName: undefined,
+          lastDisconnectedAt: null,
+        }
+      }
+      return eq
+    })
+    setEquipment(updated)
+    setShowCheckInDialog(false)
+  }
+
+  const handleMarkCharged = (equipmentId: string) => {
+    const updated = equipment.map((eq) => {
+      if (eq.id === equipmentId) {
+        return {
+          ...eq,
+          status: "ready" as const,
+          batteryLevel: 100,
+          chargingStartTime: null,
+          lastChargedDate: new Date().toISOString(),
+        }
+      }
+      return eq
+    })
+    setEquipment(updated)
+  }
+
+  const handleStartCharging = (equipmentId: string, isDeepCharge = false) => {
+    const updated = equipment.map((eq) => {
+      if (eq.id === equipmentId) {
+        // If equipment is at clinic, connect to patient
+        if (eq.status === "at-clinic") {
+          return {
+            ...eq,
+            status: "in-use" as const,
+            lastUsedDate: new Date().toISOString(),
+            lastDisconnectedAt: null,
+          }
+        }
+        // Otherwise start charging
+        return {
+          ...eq,
+          status: "charging" as const,
+          chargingStartTime: new Date().toISOString(),
+          isDeepCharge,
+        }
+      }
+      return eq
+    })
+    setEquipment(updated)
+  }
+
+  const handleCheckOut = (equipmentId: string, clinicName: string) => {
+    const updated = equipment.map((eq) => {
+      if (eq.id === equipmentId) {
+        return {
+          ...eq,
+          status: "at-clinic" as const,
+          location: "clinic" as const,
+          clinicName,
+          lastDisconnectedAt: new Date().toISOString(),
+        }
+      }
+      return eq
+    })
+    setEquipment(updated)
+  }
+
+  const handleStopCharging = (equipmentId: string) => {
+    const updated = equipment.map((eq) => {
+      if (eq.id === equipmentId) {
+        // If equipment is in use at clinic, disconnect from patient
+        if (eq.status === "in-use" && eq.location === "clinic") {
+          return {
+            ...eq,
+            status: "at-clinic" as const,
+            lastDisconnectedAt: new Date().toISOString(),
+          }
+        }
+        // Otherwise stop charging at office
+        return {
+          ...eq,
+          status: "ready" as const,
+          chargingStartTime: null,
+          isDeepCharge: false,
+        }
+      }
+      return eq
+    })
+    setEquipment(updated)
+  }
+
+  const activeAlerts = alerts.filter((a) => !a.dismissed)
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Header */}
+        <header className="mb-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex-1">
+              <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2 text-balance">
+                TopiVac Battery Manager
+              </h1>
+              <p className="text-sm lg:text-base text-gray-600 text-pretty">
+                Sistema de gestión de baterías para equipos de terapia de presión negativa
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 lg:gap-3">
+              <Button
+                variant="outline"
+                size="default"
+                onClick={() => setShowAlerts(true)}
+                className="relative flex-1 sm:flex-none"
+              >
+                <Bell className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Alertas</span>
+                {activeAlerts.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {activeAlerts.length}
+                  </span>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="default"
+                onClick={() => setShowCheckInDialog(true)}
+                className="flex-1 sm:flex-none text-sm"
+              >
+                <span className="truncate">Reingresar</span>
+              </Button>
+              <Button
+                size="default"
+                onClick={() => setShowAddDialog(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 flex-1 sm:flex-none"
+              >
+                <Plus className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Agregar Equipo</span>
+                <span className="sm:hidden">Agregar</span>
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
+          <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100">
+            <div className="text-xs md:text-sm text-gray-600 mb-1">Total Equipos</div>
+            <div className="text-2xl md:text-3xl font-bold text-gray-900">{equipment.length}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100">
+            <div className="text-xs md:text-sm text-gray-600 mb-1">Cargando</div>
+            <div className="text-2xl md:text-3xl font-bold text-amber-600">
+              {equipment.filter((e) => e.status === "charging").length}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100">
+            <div className="text-xs md:text-sm text-gray-600 mb-1">Listos</div>
+            <div className="text-2xl md:text-3xl font-bold text-green-600">
+              {equipment.filter((e) => e.status === "ready").length}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-gray-100">
+            <div className="text-xs md:text-sm text-gray-600 mb-1">En Clínica</div>
+            <div className="text-2xl md:text-3xl font-bold text-blue-600">
+              {equipment.filter((e) => e.status === "in-use" || e.status === "at-clinic").length}
+            </div>
+          </div>
+        </div>
+
+        {/* Equipment Dashboard */}
+        <EquipmentDashboard
+          equipment={equipment}
+          onMarkCharged={handleMarkCharged}
+          onStartCharging={handleStartCharging}
+          onCheckOut={handleCheckOut}
+          onStopCharging={handleStopCharging}
+        />
+
+        {/* Dialogs */}
+        <AddEquipmentDialog open={showAddDialog} onOpenChange={setShowAddDialog} onAdd={handleAddEquipment} />
+
+        <CheckInDialog
+          open={showCheckInDialog}
+          onOpenChange={setShowCheckInDialog}
+          equipment={equipment.filter((e) => e.location === "clinic")}
+          onCheckIn={handleCheckIn}
+        />
+
+        <AlertsPanel
+          open={showAlerts}
+          onOpenChange={setShowAlerts}
+          alerts={alerts}
+          onDismiss={(alertId) => {
+            setAlerts(alerts.map((a) => (a.id === alertId ? { ...a, dismissed: true } : a)))
+          }}
+        />
+      </div>
+    </div>
+  )
+}
