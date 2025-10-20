@@ -220,7 +220,7 @@ export function EquipmentCard({
                     onClick={() => setShowDeepChargeDialog(true)} 
                     variant="outline"
                     size="sm"
-                    className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400 bg-white text-sm"
+                    className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400 bg-white text-sm rounded-sm sm:rounded-md py-1"
                   >
                     <span className="text-amber-600 mr-1">[⚡]</span>
                     Carga Profunda
