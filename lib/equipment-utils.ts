@@ -197,7 +197,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
           equipmentCode: eq.code,
           type: "clinic-idle",
           severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva ${Math.floor(daysIdle)} días desconectado en ${eq.clinicName || "clínica"}. Batería: ${eq.batteryLevel}%. Requiere carga profunda manual`,
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Batería: ${eq.batteryLevel}%. Requiere carga profunda manual`,
           timestamp: now.toISOString(),
           dismissed: false,
         })
@@ -209,7 +209,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
           equipmentCode: eq.code,
           type: "overdue-charge",
           severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} en ${eq.clinicName || "clínica"} tiene batería baja (${eq.batteryLevel}%). Requiere carga urgente`,
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} en **${eq.clinicName || "clínica"}** tiene batería baja (${eq.batteryLevel}%). Requiere carga urgente`,
           timestamp: now.toISOString(),
           dismissed: false,
         })

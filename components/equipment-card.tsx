@@ -1,6 +1,6 @@
 "use client"
 
-import type { Equipment } from "@/types/equipment"
+import type { Equipment, Alert } from "@/types/equipment"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 
 interface EquipmentCardProps {
   equipment: Equipment
+  alerts: Alert[]
   onMarkCharged: (id: string) => void
   onStartCharging: (id: string, isDeepCharge: boolean) => void
   onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
@@ -22,6 +23,7 @@ interface EquipmentCardProps {
 
 export function EquipmentCard({
   equipment,
+  alerts,
   onMarkCharged,
   onStartCharging,
   onCheckOut,
@@ -41,6 +43,11 @@ export function EquipmentCard({
   const needsDeepCharge = equipment.status === "at-clinic" && equipment.lastDisconnectedAt 
     ? (new Date().getTime() - new Date(equipment.lastDisconnectedAt).getTime()) / (1000 * 60 * 60 * 24) >= 5
     : daysSinceUse >= 5
+
+  // Check if equipment has active alerts
+  const hasActiveAlerts = alerts.some(alert => 
+    alert.equipmentId === equipment.id && !alert.dismissed
+  )
 
   const statusConfig = {
     charging: { label: "Cargando", color: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -78,7 +85,12 @@ export function EquipmentCard({
 
   return (
     <>
-      <Card className="p-6 hover:shadow-lg transition-shadow bg-white border border-gray-200">
+      <Card className="p-6 hover:shadow-lg transition-shadow bg-white border border-gray-200 relative">
+        {/* Alert indicator */}
+        {hasActiveAlerts && (
+          <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full shadow-lg"></div>
+        )}
+        
         <div className="space-y-4">
           {/* Header */}
           <div className="flex items-start justify-between">

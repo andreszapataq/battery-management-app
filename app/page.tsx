@@ -410,6 +410,7 @@ export default function Home() {
         {/* Equipment Dashboard */}
         <EquipmentDashboard
           equipment={equipment}
+          alerts={alerts}
           onMarkCharged={handleMarkCharged}
           onStartCharging={handleStartCharging}
           onCheckOut={handleCheckOut}

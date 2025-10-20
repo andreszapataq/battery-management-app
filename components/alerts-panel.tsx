@@ -16,6 +16,12 @@ interface AlertsPanelProps {
 export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPanelProps) {
   const activeAlerts = alerts.filter((a) => !a.dismissed)
 
+  // Function to render markdown-like bold text
+  const renderMessage = (message: string) => {
+    const htmlMessage = message.replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-gray-900">$1</strong>')
+    return { __html: htmlMessage }
+  }
+
   const severityConfig = {
     info: {
       icon: Info,
@@ -89,7 +95,7 @@ export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPan
                           <X className="h-4 w-4" />
                         </Button>
                       </div>
-                      <p className="text-sm font-medium text-gray-900 mb-1">{alert.message}</p>
+                      <p className="text-sm font-medium text-gray-900 mb-1" dangerouslySetInnerHTML={renderMessage(alert.message)}></p>
                       <p className="text-xs text-gray-600">
                         Equipo: {alert.equipmentCode} • {new Date(alert.timestamp).toLocaleString("es-ES")}
                       </p>

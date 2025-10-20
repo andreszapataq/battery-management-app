@@ -1,8 +1,9 @@
-import type { Equipment } from "@/types/equipment"
+import type { Equipment, Alert } from "@/types/equipment"
 import { EquipmentCard } from "./equipment-card"
 
 interface EquipmentDashboardProps {
   equipment: Equipment[]
+  alerts: Alert[]
   onMarkCharged: (id: string) => void
   onStartCharging: (id: string, isDeepCharge: boolean) => void
   onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
@@ -12,6 +13,7 @@ interface EquipmentDashboardProps {
 
 export function EquipmentDashboard({
   equipment,
+  alerts,
   onMarkCharged,
   onStartCharging,
   onCheckOut,
@@ -34,6 +36,7 @@ export function EquipmentDashboard({
               <EquipmentCard
                 key={eq.id}
                 equipment={eq}
+                alerts={alerts}
                 onMarkCharged={onMarkCharged}
                 onStartCharging={onStartCharging}
                 onCheckOut={onCheckOut}
@@ -54,6 +57,7 @@ export function EquipmentDashboard({
               <EquipmentCard
                 key={eq.id}
                 equipment={eq}
+                alerts={alerts}
                 onMarkCharged={onMarkCharged}
                 onStartCharging={onStartCharging}
                 onCheckOut={onCheckOut}
@@ -76,6 +80,7 @@ export function EquipmentDashboard({
               <EquipmentCard
                 key={eq.id}
                 equipment={eq}
+                alerts={alerts}
                 onMarkCharged={onMarkCharged}
                 onStartCharging={onStartCharging}
                 onCheckOut={onCheckOut}
@@ -98,6 +103,7 @@ export function EquipmentDashboard({
               <EquipmentCard
                 key={eq.id}
                 equipment={eq}
+                alerts={alerts}
                 onMarkCharged={onMarkCharged}
                 onStartCharging={onStartCharging}
                 onCheckOut={onCheckOut}
