@@ -166,9 +166,9 @@ export function EquipmentCard({
           )}
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
             {equipment.status === "charging" && progress >= 100 && (
-              <Button onClick={() => onMarkCharged(equipment.id)} className="flex-1 bg-green-600 hover:bg-green-700">
+              <Button onClick={() => onMarkCharged(equipment.id)} className="flex-1 bg-green-600 hover:bg-green-700 text-sm">
                 Marcar Cargado
               </Button>
             )}
@@ -177,7 +177,7 @@ export function EquipmentCard({
               <Button
                 onClick={() => onStopCharging(equipment.id)}
                 variant="outline"
-                className="flex-1 border-red-300 text-red-700 hover:bg-red-50"
+                className="flex-1 border-red-300 text-red-700 hover:bg-red-50 text-sm"
               >
                 Detener Carga
               </Button>
@@ -188,19 +188,19 @@ export function EquipmentCard({
                 <Button
                   onClick={() => onStartCharging(equipment.id, needsDeepCharge)}
                   variant="outline"
-                  className="flex-1"
+                  className="flex-1 text-sm"
                 >
                   {needsDeepCharge ? "Carga Profunda" : "Recargar"}
                 </Button>
-                <Button onClick={() => setShowClinicDialog(true)} className="flex-1 bg-indigo-600 hover:bg-indigo-700">
+                <Button onClick={() => setShowClinicDialog(true)} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-sm">
                   Enviar a Clínica
                 </Button>
               </>
             )}
 
             {equipment.status === "at-clinic" && (
-              <>
-                <Button onClick={handleConnectToPatient} className="flex-1 bg-blue-600 hover:bg-blue-700">
+              <div className="flex flex-col sm:flex-row gap-2 w-full">
+                <Button onClick={handleConnectToPatient} className="flex-1 bg-blue-600 hover:bg-blue-700 text-sm">
                   Conectar a Paciente
                 </Button>
                 {needsDeepCharge && (
@@ -208,20 +208,20 @@ export function EquipmentCard({
                     onClick={() => setShowDeepChargeDialog(true)} 
                     variant="outline"
                     size="sm"
-                    className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400 bg-white"
+                    className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 hover:border-amber-400 bg-white text-sm"
                   >
                     <span className="text-amber-600 mr-1">[⚡]</span>
                     Carga Profunda
                   </Button>
                 )}
-              </>
+              </div>
             )}
 
             {equipment.status === "in-use" && (
               <Button
                 onClick={handleDisconnectFromPatient}
                 variant="outline"
-                className="flex-1 border-orange-300 text-orange-700 hover:bg-orange-50 bg-transparent"
+                className="flex-1 border-orange-300 text-orange-700 hover:bg-orange-50 bg-transparent text-sm"
               >
                 Desconectar de Paciente
               </Button>
