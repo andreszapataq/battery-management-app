@@ -88,7 +88,12 @@ export function EquipmentCard({
       <Card className="p-6 hover:shadow-lg transition-shadow bg-white border border-gray-200 relative">
         {/* Alert indicator */}
         {hasActiveAlerts && (
-          <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full shadow-lg"></div>
+          <div className="absolute -top-1 -right-1">
+            {/* Pulsing ring */}
+            <span className="absolute inline-flex h-6 w-6 rounded-full bg-red-500 opacity-75 animate-ping" />
+            {/* Solid dot */}
+            <span className="relative inline-flex h-6 w-6 rounded-full bg-red-500 shadow-lg" />
+          </div>
         )}
         
         <div className="space-y-4">
