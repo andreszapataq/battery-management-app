@@ -191,8 +191,9 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       // Only generate one alert per equipment, prioritize by importance
       if (daysIdle >= 5) {
         // Priority 1: Deep charge needed (most important)
+        // Use a consistent ID that doesn't change with timestamp to allow updates
         alerts.push({
-          id: `${eq.id}-clinic-idle-${Date.now()}`,
+          id: `${eq.id}-clinic-idle`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "clinic-idle",
@@ -204,7 +205,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       } else if (eq.batteryLevel <= 20 && eq.batteryLevel > 0) {
         // Priority 2: Low battery (only if not already needing deep charge)
         alerts.push({
-          id: `${eq.id}-low-battery-clinic-${Date.now()}`,
+          id: `${eq.id}-low-battery-clinic`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "overdue-charge",

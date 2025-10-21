@@ -16,7 +16,10 @@ import {
   createEquipment,
   dismissAlert,
   logEquipmentChange,
-  createMultipleAlerts
+  createMultipleAlerts,
+  updateAlert,
+  deleteMultipleAlerts,
+  deleteObsoleteAlerts
 } from "@/lib/database-utils"
 import { supabase } from "@/lib/supabase"
 
@@ -88,37 +91,99 @@ export default function Home() {
 
   useEffect(() => {
     const updateStatus = async () => {
-      setEquipment((currentEquipment) => {
-        const updatedEquipment = updateEquipmentStatuses(currentEquipment)
-        return updatedEquipment
-      })
-      
-      // Update alerts separately
       try {
-        const currentAlerts = await getAllAlerts()
-        const newAlerts = checkAlerts(equipment)
+        // Get fresh data from database
+        const [freshEquipment, currentAlerts] = await Promise.all([
+          getAllEquipment(),
+          getAllAlerts()
+        ])
         
-        // Filter out alerts that already exist (by equipment + type + severity + message)
-        const existingAlertKeys = new Set(currentAlerts.map(alert => 
-          `${alert.equipmentId}-${alert.type}-${alert.severity}-${alert.message}`
-        ))
+        // Update equipment statuses with fresh data
+        const updatedEquipment = updateEquipmentStatuses(freshEquipment)
+        setEquipment(updatedEquipment)
         
-        const uniqueNewAlerts = newAlerts.filter(alert => {
-          const alertKey = `${alert.equipmentId}-${alert.type}-${alert.severity}-${alert.message}`
-          return !existingAlertKeys.has(alertKey)
-        })
-        
-        // Save only new alerts
-        if (uniqueNewAlerts.length > 0) {
-          const savedAlerts = await createMultipleAlerts(uniqueNewAlerts)
-          setAlerts([...currentAlerts, ...savedAlerts])
-        } else {
-          setAlerts(currentAlerts)
+        // Clean up obsolete alerts first
+        try {
+          await deleteObsoleteAlerts()
+        } catch (error) {
+          console.error('Error cleaning obsolete alerts:', error)
         }
+        
+        // Generate alerts with fresh equipment data
+        const newAlerts = checkAlerts(updatedEquipment)
+        
+        // Create a map of existing alerts by their ID for quick lookup
+        const existingAlertsMap = new Map(currentAlerts.map(alert => [alert.id, alert]))
+        
+        // Separate new alerts from updates to existing alerts
+        const alertsToCreate: Omit<Alert, 'id' | 'createdAt' | 'updatedAt'>[] = []
+        const alertsToUpdate: Alert[] = []
+        const alertsToDelete: string[] = []
+        
+        for (const newAlert of newAlerts) {
+          const existingAlert = existingAlertsMap.get(newAlert.id)
+          if (existingAlert) {
+            // Alert exists, check if message has changed (indicating days have updated)
+            if (existingAlert.message !== newAlert.message) {
+              alertsToUpdate.push(newAlert)
+            }
+          } else {
+            // New alert
+            alertsToCreate.push(newAlert)
+          }
+        }
+        
+        // Find alerts that should be deleted (equipment no longer needs alerts)
+        const newAlertIds = new Set(newAlerts.map(alert => alert.id))
+        for (const existingAlert of currentAlerts) {
+          if (!newAlertIds.has(existingAlert.id) && !existingAlert.dismissed) {
+            // This alert is no longer needed
+            alertsToDelete.push(existingAlert.id)
+          }
+        }
+        
+        let finalAlerts = [...currentAlerts]
+        
+        // Delete obsolete alerts
+        if (alertsToDelete.length > 0) {
+          try {
+            await deleteMultipleAlerts(alertsToDelete)
+            finalAlerts = finalAlerts.filter(alert => !alertsToDelete.includes(alert.id))
+          } catch (error) {
+            console.error('Error deleting obsolete alerts:', error)
+          }
+        }
+        
+        // Create new alerts
+        if (alertsToCreate.length > 0) {
+          const savedAlerts = await createMultipleAlerts(alertsToCreate)
+          finalAlerts = [...finalAlerts, ...savedAlerts]
+        }
+        
+        // Update existing alerts with new messages
+        if (alertsToUpdate.length > 0) {
+          for (const alertToUpdate of alertsToUpdate) {
+            try {
+              const updatedAlert = await updateAlert(alertToUpdate.id, {
+                message: alertToUpdate.message,
+                timestamp: alertToUpdate.timestamp
+              })
+              finalAlerts = finalAlerts.map(alert => 
+                alert.id === alertToUpdate.id ? updatedAlert : alert
+              )
+            } catch (error) {
+              console.error('Error updating alert:', error)
+            }
+          }
+        }
+        
+        setAlerts(finalAlerts)
       } catch (error) {
         console.error('Error updating alerts:', error)
-        // Fallback to local generation
-        const newAlerts = checkAlerts(equipment)
+        // Fallback to local generation with current state
+        const updatedEquipment = updateEquipmentStatuses(equipment)
+        setEquipment(updatedEquipment)
+        const newAlerts = checkAlerts(updatedEquipment)
         setAlerts(newAlerts)
       }
     }
@@ -329,6 +394,21 @@ export default function Home() {
     }
   }
 
+  const handleCleanObsoleteAlerts = async () => {
+    try {
+      // Clean up obsolete alerts
+      await deleteObsoleteAlerts()
+      
+      // Refresh alerts from database
+      const freshAlerts = await getAllAlerts()
+      setAlerts(freshAlerts)
+      
+      console.log('Alertas obsoletas eliminadas exitosamente')
+    } catch (error) {
+      console.error('Error cleaning obsolete alerts:', error)
+    }
+  }
+
   const activeAlerts = alerts.filter((a) => !a.dismissed)
 
   return (
@@ -359,6 +439,15 @@ export default function Home() {
                     {activeAlerts.length}
                   </span>
                 )}
+              </Button>
+              <Button
+                variant="outline"
+                size="default"
+                onClick={handleCleanObsoleteAlerts}
+                className="flex-1 sm:flex-none text-sm"
+                title="Limpiar alertas obsoletas"
+              >
+                <span className="truncate">Limpiar Alertas</span>
               </Button>
               <Button
                 variant="outline"

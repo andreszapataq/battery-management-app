@@ -370,3 +370,45 @@ export async function createMultipleAlerts(alerts: Omit<Alert, 'id' | 'createdAt
 
   return data.map(convertAlertRowToAlert)
 }
+
+export async function deleteAlert(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('alerts')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error deleting alert:', error)
+    throw error
+  }
+}
+
+export async function deleteMultipleAlerts(alertIds: string[]): Promise<void> {
+  if (alertIds.length === 0) return
+
+  const { error } = await supabase
+    .from('alerts')
+    .delete()
+    .in('id', alertIds)
+
+  if (error) {
+    console.error('Error deleting multiple alerts:', error)
+    throw error
+  }
+}
+
+export async function deleteObsoleteAlerts(): Promise<void> {
+  // Delete alerts that are older than 1 hour and have been dismissed
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  
+  const { error } = await supabase
+    .from('alerts')
+    .delete()
+    .eq('dismissed', true)
+    .lt('timestamp', oneHourAgo)
+
+  if (error) {
+    console.error('Error deleting obsolete alerts:', error)
+    throw error
+  }
+}
