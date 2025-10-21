@@ -44,9 +44,13 @@ export function EquipmentCard({
     ? (new Date().getTime() - new Date(equipment.lastDisconnectedAt).getTime()) / (1000 * 60 * 60 * 24) >= 5
     : daysSinceUse >= 5
 
-  // Check if equipment has active alerts
-  const hasActiveAlerts = alerts.some(alert => 
-    alert.equipmentId === equipment.id && !alert.dismissed
+  // Check if equipment has critical alerts (not just any alerts)
+  const hasCriticalAlerts = alerts.some(alert => 
+    alert.equipmentId === equipment.id && 
+    !alert.dismissed && 
+    (alert.severity === "critical" || alert.severity === "warning") &&
+    // Don't show red indicator for equipment that's already charging (they're being addressed)
+    !(equipment.status === "charging" && alert.type === "clinic-idle")
   )
 
   const statusConfig = {
@@ -86,8 +90,8 @@ export function EquipmentCard({
   return (
     <>
       <Card className="p-6 hover:shadow-lg transition-shadow bg-white border border-gray-200 relative">
-        {/* Alert indicator */}
-        {hasActiveAlerts && (
+        {/* Critical alert indicator - only show for real problems */}
+        {hasCriticalAlerts && (
           <div className="absolute -top-1 -right-1">
             {/* Pulsing ring */}
             <span className="absolute inline-flex h-6 w-6 rounded-full bg-red-500 opacity-75 animate-ping" />
