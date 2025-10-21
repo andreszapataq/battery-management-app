@@ -18,8 +18,7 @@ import {
   logEquipmentChange,
   createMultipleAlerts,
   updateAlert,
-  deleteMultipleAlerts,
-  deleteObsoleteAlerts
+  deleteMultipleAlerts
 } from "@/lib/database-utils"
 import { supabase } from "@/lib/supabase"
 
@@ -102,82 +101,50 @@ export default function Home() {
         const updatedEquipment = updateEquipmentStatuses(freshEquipment)
         setEquipment(updatedEquipment)
         
-        // Clean up obsolete alerts first
-        try {
-          await deleteObsoleteAlerts()
-        } catch (error) {
-          console.error('Error cleaning obsolete alerts:', error)
-        }
+        // Generate fresh alerts based on current equipment status
+        const freshAlerts = checkAlerts(updatedEquipment)
         
-        // Generate alerts with fresh equipment data
-        const newAlerts = checkAlerts(updatedEquipment)
+        // Get current alerts from database
+        const currentAlertsFromDB = await getAllAlerts()
         
-        // Create a map of existing alerts by their ID for quick lookup
-        const existingAlertsMap = new Map(currentAlerts.map(alert => [alert.id, alert]))
+        // Create a simple approach: replace all active alerts with fresh ones
+        const activeAlertsFromDB = currentAlertsFromDB.filter(alert => !alert.dismissed)
         
-        // Separate new alerts from updates to existing alerts
-        const alertsToCreate: Omit<Alert, 'id' | 'createdAt' | 'updatedAt'>[] = []
-        const alertsToUpdate: Alert[] = []
-        const alertsToDelete: string[] = []
+        // Delete all active alerts that are no longer relevant
+        const alertsToDelete = activeAlertsFromDB.filter(existingAlert => 
+          !freshAlerts.some(freshAlert => freshAlert.id === existingAlert.id)
+        ).map(alert => alert.id)
         
-        for (const newAlert of newAlerts) {
-          const existingAlert = existingAlertsMap.get(newAlert.id)
-          if (existingAlert) {
-            // Alert exists, check if message has changed (indicating days have updated)
-            if (existingAlert.message !== newAlert.message) {
-              alertsToUpdate.push(newAlert)
-            }
-          } else {
-            // New alert
-            alertsToCreate.push(newAlert)
-          }
-        }
-        
-        // Find alerts that should be deleted (equipment no longer needs alerts)
-        const newAlertIds = new Set(newAlerts.map(alert => alert.id))
-        for (const existingAlert of currentAlerts) {
-          if (!newAlertIds.has(existingAlert.id) && !existingAlert.dismissed) {
-            // This alert is no longer needed
-            alertsToDelete.push(existingAlert.id)
-          }
-        }
-        
-        let finalAlerts = [...currentAlerts]
-        
-        // Delete obsolete alerts
         if (alertsToDelete.length > 0) {
-          try {
-            await deleteMultipleAlerts(alertsToDelete)
-            finalAlerts = finalAlerts.filter(alert => !alertsToDelete.includes(alert.id))
-          } catch (error) {
-            console.error('Error deleting obsolete alerts:', error)
-          }
+          await deleteMultipleAlerts(alertsToDelete)
         }
+        
+        // Create or update alerts
+        const alertsToCreate = freshAlerts.filter(freshAlert => 
+          !activeAlertsFromDB.some(existingAlert => existingAlert.id === freshAlert.id)
+        )
+        
+        const alertsToUpdate = freshAlerts.filter(freshAlert => {
+          const existingAlert = activeAlertsFromDB.find(existing => existing.id === freshAlert.id)
+          return existingAlert && existingAlert.message !== freshAlert.message
+        })
         
         // Create new alerts
         if (alertsToCreate.length > 0) {
-          const savedAlerts = await createMultipleAlerts(alertsToCreate)
-          finalAlerts = [...finalAlerts, ...savedAlerts]
+          await createMultipleAlerts(alertsToCreate)
         }
         
-        // Update existing alerts with new messages
-        if (alertsToUpdate.length > 0) {
-          for (const alertToUpdate of alertsToUpdate) {
-            try {
-              const updatedAlert = await updateAlert(alertToUpdate.id, {
-                message: alertToUpdate.message,
-                timestamp: alertToUpdate.timestamp
-              })
-              finalAlerts = finalAlerts.map(alert => 
-                alert.id === alertToUpdate.id ? updatedAlert : alert
-              )
-            } catch (error) {
-              console.error('Error updating alert:', error)
-            }
-          }
+        // Update existing alerts
+        for (const alertToUpdate of alertsToUpdate) {
+          await updateAlert(alertToUpdate.id, {
+            message: alertToUpdate.message,
+            timestamp: alertToUpdate.timestamp
+          })
         }
         
-        setAlerts(finalAlerts)
+        // Refresh alerts from database
+        const updatedAlerts = await getAllAlerts()
+        setAlerts(updatedAlerts)
       } catch (error) {
         console.error('Error updating alerts:', error)
         // Fallback to local generation with current state
@@ -394,20 +361,6 @@ export default function Home() {
     }
   }
 
-  const handleCleanObsoleteAlerts = async () => {
-    try {
-      // Clean up obsolete alerts
-      await deleteObsoleteAlerts()
-      
-      // Refresh alerts from database
-      const freshAlerts = await getAllAlerts()
-      setAlerts(freshAlerts)
-      
-      console.log('Alertas obsoletas eliminadas exitosamente')
-    } catch (error) {
-      console.error('Error cleaning obsolete alerts:', error)
-    }
-  }
 
   const activeAlerts = alerts.filter((a) => !a.dismissed)
 
@@ -439,15 +392,6 @@ export default function Home() {
                     {activeAlerts.length}
                   </span>
                 )}
-              </Button>
-              <Button
-                variant="outline"
-                size="default"
-                onClick={handleCleanObsoleteAlerts}
-                className="flex-1 sm:flex-none text-sm"
-                title="Limpiar alertas obsoletas"
-              >
-                <span className="truncate">Limpiar Alertas</span>
               </Button>
               <Button
                 variant="outline"
