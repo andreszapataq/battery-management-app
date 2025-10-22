@@ -43,6 +43,7 @@ export function updateEquipmentStatuses(equipment: Equipment[]): Equipment[] {
             batteryLevel: 100,
             chargingStartTime: null,
             lastChargedDate: now.toISOString(),
+            lastUsedDate: now.toISOString(), // Reset the days counter for normal charging too
             isDeepCharge: false,
           }
         }
@@ -138,11 +139,17 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
     }
 
     // Check if equipment is currently in deep charge mode
-    if (eq.status === "charging" && eq.isDeepCharge) {
+    // Only show calibration alerts for equipment that has been used before (not brand new)
+    if (eq.status === "charging" && eq.isDeepCharge && eq.lastUsedDate) {
       const startTime = new Date(eq.chargingStartTime!)
+      const lastUsed = new Date(eq.lastUsedDate)
       const hoursCharging = (now.getTime() - startTime.getTime()) / (1000 * 60 * 60)
       
-      if (hoursCharging < 12) {
+      // Only show calibration alert if the equipment has been used before
+      // (not a brand new equipment that was just created)
+      const isNewEquipment = Math.abs(startTime.getTime() - lastUsed.getTime()) < 60000 // Less than 1 minute difference
+      
+      if (hoursCharging < 12 && !isNewEquipment) {
         alerts.push({
           id: `${eq.id}-deep-charging-${Date.now()}`,
           equipmentId: eq.id,
@@ -175,12 +182,20 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
     }
 
     // Check if deep charge completed and battery calibration is done
-    if (eq.status === "ready" && eq.lastChargedDate) {
+    // Only show calibration success alerts for equipment that actually went through a deep charge process
+    if (eq.status === "ready" && eq.lastChargedDate && eq.lastUsedDate) {
       const lastCharged = new Date(eq.lastChargedDate)
+      const lastUsed = new Date(eq.lastUsedDate)
       const hoursSinceCharged = (now.getTime() - lastCharged.getTime()) / (1000 * 60 * 60)
       
-      // If it was a deep charge and completed recently, show calibration success
-      if (hoursSinceCharged < 1 && eq.batteryLevel === 100) {
+      // Only show calibration success if:
+      // 1. It was charged recently (within 1 hour)
+      // 2. Battery is at 100%
+      // 3. The equipment has been used before (not a brand new equipment)
+      // 4. The last used date is different from last charged date (indicating it went through a real process)
+      const isNewEquipment = Math.abs(lastCharged.getTime() - lastUsed.getTime()) < 60000 // Less than 1 minute difference
+      
+      if (hoursSinceCharged < 1 && eq.batteryLevel === 100 && !isNewEquipment) {
         alerts.push({
           id: `${eq.id}-calibration-complete-${Date.now()}`,
           equipmentId: eq.id,
