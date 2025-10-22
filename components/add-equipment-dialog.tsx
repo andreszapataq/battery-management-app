@@ -13,7 +13,7 @@ import type { Equipment } from "@/types/equipment"
 interface AddEquipmentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAdd: (equipment: Equipment) => void
+  onAdd: (equipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt'>) => void
 }
 
 export function AddEquipmentDialog({ open, onOpenChange, onAdd }: AddEquipmentDialogProps) {
@@ -25,19 +25,26 @@ export function AddEquipmentDialog({ open, onOpenChange, onAdd }: AddEquipmentDi
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    const newEquipment: Equipment = {
-      id: `eq-${Date.now()}`,
-      code,
-      model,
-      lot,
+    // Validate required fields
+    if (!code.trim() || !model.trim() || !lot.trim()) {
+      alert('Por favor, completa todos los campos requeridos.')
+      return
+    }
+
+    const newEquipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt'> = {
+      code: code.trim(),
+      model: model.trim(),
+      lot: lot.trim(),
       status: "ready",
       location: "office",
       batteryLevel: 100,
       chargingStartTime: null,
       lastChargedDate: new Date().toISOString(),
       lastUsedDate: new Date().toISOString(),
+      lastDisconnectedAt: null,
       isDeepCharge: false,
-      notes,
+      needsManualDisconnection: false,
+      notes: notes.trim() || undefined,
     }
 
     onAdd(newEquipment)

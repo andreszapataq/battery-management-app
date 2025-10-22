@@ -18,7 +18,8 @@ import {
   logEquipmentChange,
   createMultipleAlerts,
   updateAlert,
-  deleteMultipleAlerts
+  deleteMultipleAlerts,
+  getAllLots
 } from "@/lib/database-utils"
 import { supabase } from "@/lib/supabase"
 
@@ -175,6 +176,20 @@ export default function Home() {
       setShowAddDialog(false)
     } catch (error) {
       console.error('Error adding equipment:', error)
+      
+      // If it's a lot conflict, show all existing lots for debugging
+      if (error instanceof Error && error.message.includes('ya existe')) {
+        try {
+          const existingLots = await getAllLots()
+          console.log('All existing lots:', existingLots)
+          alert(`${error.message}\n\nLotes existentes: ${existingLots.map(l => `${l.code}: ${l.lot}`).join(', ')}`)
+        } catch (debugError) {
+          console.error('Error fetching lots for debugging:', debugError)
+          alert(error.message)
+        }
+      } else {
+        alert(error instanceof Error ? error.message : 'Error al agregar el equipo. Inténtalo de nuevo.')
+      }
     }
   }
 

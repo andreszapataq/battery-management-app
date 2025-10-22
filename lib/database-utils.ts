@@ -60,6 +60,20 @@ export async function getAllEquipment(): Promise<Equipment[]> {
   return data.map(convertEquipmentRowToEquipment)
 }
 
+export async function getAllLots(): Promise<{id: string, code: string, lot: string}[]> {
+  const { data, error } = await supabase
+    .from('equipment')
+    .select('id, code, lot')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching lots:', error)
+    throw error
+  }
+
+  return data || []
+}
+
 export async function getEquipmentById(id: string): Promise<Equipment | null> {
   const { data, error } = await supabase
     .from('equipment')
@@ -76,6 +90,22 @@ export async function getEquipmentById(id: string): Promise<Equipment | null> {
 }
 
 export async function createEquipment(equipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Equipment> {
+  console.log('Creating equipment with data:', equipment)
+  
+  // First, let's check if the lot already exists
+  const { data: existingLot, error: checkError } = await supabase
+    .from('equipment')
+    .select('id, code, lot')
+    .eq('lot', equipment.lot)
+    .single()
+
+  if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows found
+    console.error('Error checking existing lot:', checkError)
+  } else if (existingLot) {
+    console.log('Found existing equipment with same lot:', existingLot)
+    throw new Error(`El lote "${equipment.lot}" ya existe en el equipo ${existingLot.code}. Por favor, usa un lote diferente.`)
+  }
+
   const { data, error } = await supabase
     .from('equipment')
     .insert({
@@ -99,7 +129,16 @@ export async function createEquipment(equipment: Omit<Equipment, 'id' | 'created
 
   if (error) {
     console.error('Error creating equipment:', error)
-    throw error
+    console.error('Full error details:', JSON.stringify(error, null, 2))
+    
+    // Handle specific error cases
+    if (error.code === '23505') {
+      throw new Error(`El lote "${equipment.lot}" ya existe. Por favor, usa un lote diferente.`)
+    } else if (error.code === '23503') {
+      throw new Error('Error de integridad de datos. Verifica que todos los campos requeridos estén completos.')
+    } else {
+      throw new Error(`Error al crear el equipo: ${error.message}`)
+    }
   }
 
   return convertEquipmentRowToEquipment(data)
