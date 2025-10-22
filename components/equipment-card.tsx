@@ -4,7 +4,7 @@ import type { Equipment, Alert } from "@/types/equipment"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { Battery, BatteryCharging, Clock, MapPin, AlertTriangle, Building2 } from "lucide-react"
+import { Battery, BatteryCharging, Clock, MapPin, AlertTriangle, Building2, CheckCircle, Power } from "lucide-react"
 import { getChargingProgress, getTimeRemaining, getDaysSinceLastUse } from "@/lib/equipment-utils"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -19,6 +19,7 @@ interface EquipmentCardProps {
   onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
   onStopCharging: (id: string) => void
   onStartDeepCharge: (id: string) => void
+  onManualDisconnect?: (id: string) => void
 }
 
 export function EquipmentCard({
@@ -29,6 +30,7 @@ export function EquipmentCard({
   onCheckOut,
   onStopCharging,
   onStartDeepCharge,
+  onManualDisconnect,
 }: EquipmentCardProps) {
   const [showClinicDialog, setShowClinicDialog] = useState(false)
   const [clinicName, setClinicName] = useState("")
@@ -40,12 +42,16 @@ export function EquipmentCard({
   const daysSinceUse = getDaysSinceLastUse(equipment)
   
   // Check if deep charge is needed (5 days for clinic equipment)
-  const needsDeepCharge = equipment.status === "at-clinic" && equipment.lastDisconnectedAt 
-    ? (new Date().getTime() - new Date(equipment.lastDisconnectedAt).getTime()) / (1000 * 60 * 60 * 24) >= 5
-    : daysSinceUse >= 5
+  // Only show deep charge option if battery is not at 100%
+  const needsDeepCharge = equipment.batteryLevel < 100 && (
+    equipment.status === "at-clinic" && equipment.lastDisconnectedAt 
+      ? (new Date().getTime() - new Date(equipment.lastDisconnectedAt).getTime()) / (1000 * 60 * 60 * 24) >= 5
+      : daysSinceUse >= 5
+  )
 
   // Check if equipment has critical alerts (not just any alerts)
-  const hasCriticalAlerts = alerts.some(alert => 
+  // Don't show red indicator for equipment at 100% battery
+  const hasCriticalAlerts = equipment.batteryLevel < 100 && alerts.some(alert => 
     alert.equipmentId === equipment.id && 
     !alert.dismissed && 
     (alert.severity === "critical" || alert.severity === "warning") &&
@@ -85,6 +91,12 @@ export function EquipmentCard({
   const handleStartDeepCharge = () => {
     onStartDeepCharge(equipment.id)
     setShowDeepChargeDialog(false)
+  }
+
+  const handleManualDisconnect = () => {
+    if (onManualDisconnect) {
+      onManualDisconnect(equipment.id)
+    }
   }
 
   return (
@@ -183,6 +195,28 @@ export function EquipmentCard({
                 <p className="font-semibold">Requiere carga profunda</p>
                 <p>{Math.floor(daysSinceUse)} días sin uso</p>
               </div>
+            </div>
+          )}
+
+          {/* Manual Disconnection Notice */}
+          {equipment.needsManualDisconnection && equipment.status === "charging" && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
+              <div className="flex items-center gap-2 text-green-700 mb-2">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">Carga profunda completada</span>
+              </div>
+              <p className="text-xs text-green-600 mb-3">
+                El equipo completó la carga de 12 horas y está listo para desconectar manualmente.
+              </p>
+              {onManualDisconnect && (
+                <Button 
+                  onClick={handleManualDisconnect}
+                  className="w-full bg-green-600 hover:bg-green-700 text-sm"
+                >
+                  <Power className="h-4 w-4 mr-2" />
+                  ✅ Desconectar Manualmente
+                </Button>
+              )}
             </div>
           )}
 

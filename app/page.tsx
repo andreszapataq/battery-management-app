@@ -348,6 +348,7 @@ export default function Home() {
         location: "clinic" as const, // Explicitly keep location as clinic
         chargingStartTime: new Date().toISOString(),
         isDeepCharge: true,
+        needsManualDisconnection: false,
         // Preserve clinic information
         clinicName: equipmentToUpdate.clinicName,
         clinicCity: equipmentToUpdate.clinicCity,
@@ -358,6 +359,34 @@ export default function Home() {
       await logEquipmentChange(equipmentId, 'start_deep_charge', oldValue, newValue, `Inicio de carga profunda en ${equipmentToUpdate.clinicName} - ${equipmentToUpdate.clinicCity}`)
     } catch (error) {
       console.error('Error starting deep charge:', error)
+    }
+  }
+
+  const handleManualDisconnect = async (equipmentId: string) => {
+    try {
+      const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
+      if (!equipmentToUpdate) return
+
+      const oldValue = { ...equipmentToUpdate }
+      const newValue = {
+        ...equipmentToUpdate,
+        status: "at-clinic" as const,
+        batteryLevel: 100,
+        chargingStartTime: null,
+        lastChargedDate: new Date().toISOString(),
+        lastUsedDate: new Date().toISOString(), // Reset the days counter
+        isDeepCharge: false,
+        needsManualDisconnection: false,
+        // Preserve clinic information
+        clinicName: equipmentToUpdate.clinicName,
+        clinicCity: equipmentToUpdate.clinicCity,
+      }
+
+      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
+      await logEquipmentChange(equipmentId, 'manual_disconnect', oldValue, newValue, `Desconexión manual después de carga profunda completada en ${equipmentToUpdate.clinicName} - ${equipmentToUpdate.clinicCity}`)
+    } catch (error) {
+      console.error('Error with manual disconnect:', error)
     }
   }
 
@@ -449,6 +478,7 @@ export default function Home() {
           onCheckOut={handleCheckOut}
           onStopCharging={handleStopCharging}
           onStartDeepCharge={handleStartDeepCharge}
+          onManualDisconnect={handleManualDisconnect}
         />
 
         {/* Dialogs */}

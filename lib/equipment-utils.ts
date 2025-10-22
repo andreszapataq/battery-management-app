@@ -12,19 +12,31 @@ export function updateEquipmentStatuses(equipment: Equipment[]): Equipment[] {
 
       // Auto-complete charging when target time is reached
       if (hoursCharging >= targetHours && batteryLevel >= 100) {
-        // If it's a deep charge at clinic, return to at-clinic status
+        // If it's a deep charge at clinic, implement grace period
         if (eq.isDeepCharge && eq.location === "clinic") {
-          return {
-            ...eq,
-            status: "at-clinic" as const,
-            batteryLevel: 100,
-            chargingStartTime: null,
-            lastChargedDate: now.toISOString(),
-            lastUsedDate: now.toISOString(), // Reset the days counter
-            isDeepCharge: false,
+          // Grace period: 2 hours after completion (14 hours total)
+          if (hoursCharging >= 14) {
+            // Auto-disconnect after grace period
+            return {
+              ...eq,
+              status: "at-clinic" as const,
+              batteryLevel: 100,
+              chargingStartTime: null,
+              lastChargedDate: now.toISOString(),
+              lastUsedDate: now.toISOString(), // Reset the days counter
+              isDeepCharge: false,
+              needsManualDisconnection: false,
+            }
+          } else {
+            // Still in grace period - mark as completed but keep charging
+            return {
+              ...eq,
+              batteryLevel: 100,
+              needsManualDisconnection: true,
+            }
           }
         } else {
-          // Normal charging at office
+          // Normal charging at office - immediate completion
           return {
             ...eq,
             status: "ready" as const,
@@ -106,7 +118,8 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
     }
 
     // Check if deep charge is needed (5 days without use)
-    if (eq.status === "ready" && eq.lastUsedDate) {
+    // Only generate alerts for equipment that actually needs charging
+    if (eq.status === "ready" && eq.lastUsedDate && eq.batteryLevel < 100) {
       const lastUsed = new Date(eq.lastUsedDate)
       const daysSinceUse = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24)
 
@@ -141,6 +154,24 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
           dismissed: false,
         })
       }
+    }
+
+    // Check if equipment needs manual disconnection after deep charge completion
+    if (eq.status === "charging" && eq.needsManualDisconnection) {
+      const startTime = new Date(eq.chargingStartTime!)
+      const hoursCharging = (now.getTime() - startTime.getTime()) / (1000 * 60 * 60)
+      const completionTime = new Date(startTime.getTime() + 12 * 60 * 60 * 1000)
+      
+      alerts.push({
+        id: `${eq.id}-manual-disconnect`,
+        equipmentId: eq.id,
+        equipmentCode: eq.code,
+        type: "manual-disconnect",
+        severity: hoursCharging >= 13 ? "critical" : "warning", // Critical after 13 hours
+        message: `Equipo ${eq.code} completó carga profunda a las ${completionTime.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })}. ${hoursCharging >= 13 ? 'URGENTE: ' : ''}Desconectar manualmente para liberar el cargador${hoursCharging >= 13 ? ' (auto-desconexión en 1 hora)' : ''}`,
+        timestamp: now.toISOString(),
+        dismissed: false,
+      })
     }
 
     // Check if deep charge completed and battery calibration is done
@@ -188,32 +219,36 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       const lastDisconnected = new Date(eq.lastDisconnectedAt)
       const daysIdle = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
 
-      // Only generate one alert per equipment, prioritize by importance
-      if (daysIdle >= 5) {
-        // Priority 1: Deep charge needed (most important)
-        // Use a consistent ID that doesn't change with timestamp to allow updates
-        alerts.push({
-          id: `${eq.id}-clinic-idle`,
-          equipmentId: eq.id,
-          equipmentCode: eq.code,
-          type: "clinic-idle",
-          severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Batería: ${eq.batteryLevel}%. Requiere carga profunda manual`,
-          timestamp: now.toISOString(),
-          dismissed: false,
-        })
-      } else if (eq.batteryLevel <= 20 && eq.batteryLevel > 0) {
-        // Priority 2: Low battery (only if not already needing deep charge)
-        alerts.push({
-          id: `${eq.id}-low-battery-clinic`,
-          equipmentId: eq.id,
-          equipmentCode: eq.code,
-          type: "overdue-charge",
-          severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} en **${eq.clinicName || "clínica"}** tiene batería baja (${eq.batteryLevel}%). Requiere carga urgente`,
-          timestamp: now.toISOString(),
-          dismissed: false,
-        })
+      // Only generate alerts for equipment that actually needs attention
+      // Don't generate alerts for equipment at 100% battery
+      if (eq.batteryLevel < 100) {
+        // Only generate one alert per equipment, prioritize by importance
+        if (daysIdle >= 5) {
+          // Priority 1: Deep charge needed (most important)
+          // Use a consistent ID that doesn't change with timestamp to allow updates
+          alerts.push({
+            id: `${eq.id}-clinic-idle`,
+            equipmentId: eq.id,
+            equipmentCode: eq.code,
+            type: "clinic-idle",
+            severity: "warning",
+            message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Batería: ${eq.batteryLevel}%. Requiere carga profunda manual`,
+            timestamp: now.toISOString(),
+            dismissed: false,
+          })
+        } else if (eq.batteryLevel <= 20 && eq.batteryLevel > 0) {
+          // Priority 2: Low battery (only if not already needing deep charge)
+          alerts.push({
+            id: `${eq.id}-low-battery-clinic`,
+            equipmentId: eq.id,
+            equipmentCode: eq.code,
+            type: "overdue-charge",
+            severity: "warning",
+            message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} en **${eq.clinicName || "clínica"}** tiene batería baja (${eq.batteryLevel}%). Requiere carga urgente`,
+            timestamp: now.toISOString(),
+            dismissed: false,
+          })
+        }
       }
     }
   })

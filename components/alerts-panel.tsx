@@ -91,6 +91,11 @@ export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPan
                             Carga Completada
                           </Badge>
                         )}
+                        {alert.type === "manual-disconnect" && (
+                          <Badge className="ml-2 bg-amber-100 text-amber-700">
+                            Desconexión Manual
+                          </Badge>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => onDismiss(alert.id)} className="h-6 w-6 p-0">
                           <X className="h-4 w-4" />
                         </Button>

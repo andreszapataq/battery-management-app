@@ -1,6 +1,6 @@
 export type EquipmentStatus = "charging" | "ready" | "in-use" | "at-clinic" | "maintenance"
 export type Location = "office" | "clinic"
-export type AlertType = "charge-complete" | "deep-charge-needed" | "overdue-charge" | "maintenance-due" | "clinic-idle" | "battery-calibration" | "deep-charge-complete"
+export type AlertType = "charge-complete" | "deep-charge-needed" | "overdue-charge" | "maintenance-due" | "clinic-idle" | "battery-calibration" | "deep-charge-complete" | "manual-disconnect"
 export type AlertSeverity = "info" | "warning" | "critical"
 
 export interface Equipment {
@@ -16,6 +16,7 @@ export interface Equipment {
   lastUsedDate: string | null
   lastDisconnectedAt: string | null
   isDeepCharge: boolean
+  needsManualDisconnection?: boolean
   notes?: string
   clinicName?: string
   clinicCity?: string
@@ -63,6 +64,7 @@ export interface EquipmentRow {
   last_used_date: string | null
   last_disconnected_at: string | null
   is_deep_charge: boolean
+  needs_manual_disconnection: boolean | null
   notes: string | null
   clinic_name: string | null
   clinic_city: string | null

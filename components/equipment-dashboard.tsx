@@ -9,6 +9,7 @@ interface EquipmentDashboardProps {
   onCheckOut: (id: string, clinicName: string, clinicCity: string) => void
   onStopCharging: (id: string) => void
   onStartDeepCharge: (id: string) => void
+  onManualDisconnect?: (id: string) => void
 }
 
 export function EquipmentDashboard({
@@ -19,6 +20,7 @@ export function EquipmentDashboard({
   onCheckOut,
   onStopCharging,
   onStartDeepCharge,
+  onManualDisconnect,
 }: EquipmentDashboardProps) {
   const chargingEquipment = equipment.filter((e) => e.status === "charging")
   const readyEquipment = equipment.filter((e) => e.status === "ready")
@@ -42,6 +44,7 @@ export function EquipmentDashboard({
                 onCheckOut={onCheckOut}
                 onStopCharging={onStopCharging}
                 onStartDeepCharge={onStartDeepCharge}
+                onManualDisconnect={onManualDisconnect}
               />
             ))}
           </div>
@@ -63,6 +66,7 @@ export function EquipmentDashboard({
                 onCheckOut={onCheckOut}
                 onStopCharging={onStopCharging}
                 onStartDeepCharge={onStartDeepCharge}
+                onManualDisconnect={onManualDisconnect}
               />
             ))}
           </div>
@@ -86,6 +90,7 @@ export function EquipmentDashboard({
                 onCheckOut={onCheckOut}
                 onStopCharging={onStopCharging}
                 onStartDeepCharge={onStartDeepCharge}
+                onManualDisconnect={onManualDisconnect}
               />
             ))}
           </div>
@@ -109,6 +114,7 @@ export function EquipmentDashboard({
                 onCheckOut={onCheckOut}
                 onStopCharging={onStopCharging}
                 onStartDeepCharge={onStartDeepCharge}
+                onManualDisconnect={onManualDisconnect}
               />
             ))}
           </div>
