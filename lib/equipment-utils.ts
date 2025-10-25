@@ -201,15 +201,15 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       const hoursSinceCharged = (now.getTime() - lastCharged.getTime()) / (1000 * 60 * 60)
       
       // Only show calibration success if:
-      // 1. It was charged recently (within 1 hour)
+      // 1. It was charged very recently (within 5 minutes) - this ensures it only shows once
       // 2. Battery is at 100%
       // 3. The equipment has been used before (not a brand new equipment)
       // 4. The last used date is different from last charged date (indicating it went through a real process)
       const isNewEquipment = Math.abs(lastCharged.getTime() - lastUsed.getTime()) < 60000 // Less than 1 minute difference
       
-      if (hoursSinceCharged < 1 && eq.batteryLevel === 100 && !isNewEquipment) {
+      if (hoursSinceCharged < 0.083 && eq.batteryLevel === 100 && !isNewEquipment) { // 0.083 hours = 5 minutes
         alerts.push({
-          id: `${eq.id}-calibration-complete-${Date.now()}`,
+          id: `${eq.id}-calibration-complete-${Math.floor(lastCharged.getTime() / 1000)}`, // Use fixed ID based on charge time
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "battery-calibration",

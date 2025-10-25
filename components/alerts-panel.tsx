@@ -16,6 +16,26 @@ interface AlertsPanelProps {
 export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPanelProps) {
   const activeAlerts = alerts.filter((a) => !a.dismissed)
 
+  // Function to determine if an alert can be dismissed
+  const canDismissAlert = (alert: Alert) => {
+    // Alertas que se pueden limpiar (informativas o de éxito)
+    const dismissibleTypes = [
+      "battery-calibration",      // Calibración completada
+      "deep-charge-complete",    // Carga profunda completada
+      "charge-complete",         // Carga normal completada
+      "manual-disconnect"        // Desconexión manual completada
+    ]
+    
+    // Alertas que NO se pueden limpiar (requieren acción)
+    const nonDismissibleTypes = [
+      "deep-charge-needed",      // Requiere carga profunda
+      "overdue-charge",          // Carga vencida
+      "clinic-idle"             // Equipo inactivo en clínica
+    ]
+    
+    return dismissibleTypes.includes(alert.type)
+  }
+
   // Function to render markdown-like bold text
   const renderMessage = (message: string) => {
     const htmlMessage = message.replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-gray-900">$1</strong>')
@@ -96,9 +116,16 @@ export function AlertsPanel({ open, onOpenChange, alerts, onDismiss }: AlertsPan
                             Desconexión Manual
                           </Badge>
                         )}
-                        <Button variant="ghost" size="sm" onClick={() => onDismiss(alert.id)} className="h-6 w-6 p-0">
-                          <X className="h-4 w-4" />
-                        </Button>
+                        {/* Show dismiss button or indicator */}
+                        {canDismissAlert(alert) ? (
+                          <Button variant="ghost" size="sm" onClick={() => onDismiss(alert.id)} className="h-6 w-6 p-0" title="Limpiar alerta">
+                            <X className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <div className="h-6 w-6 flex items-center justify-center" title="Esta alerta se resolverá automáticamente cuando se tome la acción requerida">
+                            <div className="h-2 w-2 rounded-full bg-orange-400"></div>
+                          </div>
+                        )}
                       </div>
                       <p className="text-sm font-medium text-gray-900 mb-1" dangerouslySetInnerHTML={renderMessage(alert.message)}></p>
                       <p className="text-xs text-gray-600">

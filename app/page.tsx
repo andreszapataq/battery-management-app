@@ -6,7 +6,7 @@ import { AddEquipmentDialog } from "@/components/add-equipment-dialog"
 import { CheckInDialog } from "@/components/check-in-dialog"
 import { AlertsPanel } from "@/components/alerts-panel"
 import { Button } from "@/components/ui/button"
-import { Plus, Bell, Battery } from "lucide-react"
+import { Plus, Bell } from "lucide-react"
 import type { Equipment, Alert } from "@/types/equipment"
 import { checkAlerts, updateEquipmentStatuses } from "@/lib/equipment-utils"
 import { 
@@ -29,14 +29,16 @@ export default function Home() {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showCheckInDialog, setShowCheckInDialog] = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [connectionError, setConnectionError] = useState<string | null>(null)
 
   // Function to retry connection
   const retryConnection = async () => {
-    setIsLoading(true)
     setConnectionError(null)
-    
+    await loadData()
+  }
+
+  // Load equipment and alerts from Supabase on mount
+  const loadData = async () => {
     try {
       const [equipmentData, alertsData] = await Promise.all([
         getAllEquipment(),
@@ -46,38 +48,13 @@ export default function Home() {
       setAlerts(alertsData)
       setConnectionError(null)
     } catch (error) {
-      console.error('Error retrying connection:', error)
-      setConnectionError('Error de conexión persistente. Por favor, verifica tu conexión a internet.')
-    } finally {
-      setIsLoading(false)
+      console.error('Error loading data:', error)
+      setConnectionError('Error de conexión con la base de datos')
+      // Keep existing data instead of clearing it
     }
   }
 
-  // Load equipment and alerts from Supabase on mount
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true)
-      setConnectionError(null)
-      
-      try {
-        const [equipmentData, alertsData] = await Promise.all([
-          getAllEquipment(),
-          getAllAlerts()
-        ])
-        setEquipment(equipmentData)
-        setAlerts(alertsData)
-        setConnectionError(null)
-      } catch (error) {
-        console.error('Error loading data:', error)
-        setConnectionError('Error de conexión con la base de datos. Por favor, verifica tu conexión a internet e intenta recargar la página.')
-        // Set empty arrays as fallback
-        setEquipment([])
-        setAlerts([])
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
     loadData()
   }, [])
 
@@ -467,42 +444,31 @@ export default function Home() {
 
   const activeAlerts = alerts.filter((a) => !a.dismissed)
 
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
-            <Battery className="h-8 w-8 text-white animate-pulse" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Cargando...</h2>
-          <p className="text-gray-600">Conectando con la base de datos</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Show connection error
-  if (connectionError) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <div className="w-16 h-16 bg-red-100 rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
-            <Bell className="h-8 w-8 text-red-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error de Conexión</h2>
-          <p className="text-gray-600 mb-6">{connectionError}</p>
-          <Button onClick={retryConnection} className="bg-blue-600 hover:bg-blue-700">
-            Reintentar Conexión
-          </Button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Connection Error Banner */}
+        {connectionError && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Bell className="h-5 w-5 text-red-600" />
+              <div>
+                <p className="text-sm font-medium text-red-800">Problema de conexión</p>
+                <p className="text-xs text-red-600">Los datos pueden no estar actualizados</p>
+              </div>
+            </div>
+            <Button 
+              onClick={retryConnection} 
+              variant="outline" 
+              size="sm"
+              className="text-red-700 border-red-300 hover:bg-red-100"
+            >
+              Reintentar
+            </Button>
+          </div>
+        )}
+
         {/* Header */}
         <header className="mb-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
