@@ -16,6 +16,7 @@ export function convertEquipmentRowToEquipment(row: EquipmentRow): Equipment {
     lastUsedDate: row.last_used_date,
     lastDisconnectedAt: row.last_disconnected_at,
     isDeepCharge: row.is_deep_charge,
+    needsManualDisconnection: row.needs_manual_disconnection || false,
     notes: row.notes || undefined,
     clinicName: row.clinic_name || undefined,
     clinicCity: row.clinic_city || undefined,
@@ -43,21 +44,26 @@ export function convertAlertRowToAlert(row: AlertRow): Alert {
 
 // Equipment operations
 export async function getAllEquipment(): Promise<Equipment[]> {
-  const { data, error } = await supabase
-    .from('equipment')
-    .select('*')
-    .order('created_at', { ascending: false })
+  try {
+    const { data, error } = await supabase
+      .from('equipment')
+      .select('*')
+      .order('created_at', { ascending: false })
 
-  if (error) {
-    console.error('Error fetching equipment:', error)
-    throw error
+    if (error) {
+      console.error('Error fetching equipment:', error)
+      throw new Error(`Error fetching equipment: ${error.message}`)
+    }
+
+    if (!data || data.length === 0) {
+      return []
+    }
+
+    return data.map(convertEquipmentRowToEquipment)
+  } catch (error) {
+    console.error('Error in getAllEquipment:', error)
+    throw new Error(`Failed to fetch equipment: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
-
-  if (!data || data.length === 0) {
-    return []
-  }
-
-  return data.map(convertEquipmentRowToEquipment)
 }
 
 export async function getAllLots(): Promise<{id: string, code: string, lot: string}[]> {
@@ -191,17 +197,22 @@ export async function deleteEquipment(id: string): Promise<void> {
 
 // Alert operations
 export async function getAllAlerts(): Promise<Alert[]> {
-  const { data, error } = await supabase
-    .from('alerts')
-    .select('*')
-    .order('timestamp', { ascending: false })
+  try {
+    const { data, error } = await supabase
+      .from('alerts')
+      .select('*')
+      .order('timestamp', { ascending: false })
 
-  if (error) {
-    console.error('Error fetching alerts:', error)
-    throw error
+    if (error) {
+      console.error('Error fetching alerts:', error)
+      throw new Error(`Error fetching alerts: ${error.message}`)
+    }
+
+    return data.map(convertAlertRowToAlert)
+  } catch (error) {
+    console.error('Error in getAllAlerts:', error)
+    throw new Error(`Failed to fetch alerts: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
-
-  return data.map(convertAlertRowToAlert)
 }
 
 export async function getAlertsByEquipmentId(equipmentId: string): Promise<Alert[]> {

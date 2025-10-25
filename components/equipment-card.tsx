@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Battery, BatteryCharging, Clock, MapPin, AlertTriangle, Building2, CheckCircle, Power } from "lucide-react"
-import { getChargingProgress, getTimeRemaining, getDaysSinceLastUse } from "@/lib/equipment-utils"
+import { getChargingProgress, getTimeRemaining, getDaysSinceLastUse, getDaysUntilDeepCharge } from "@/lib/equipment-utils"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -40,18 +40,16 @@ export function EquipmentCard({
   const progress = getChargingProgress(equipment)
   const timeRemaining = getTimeRemaining(equipment)
   const daysSinceUse = getDaysSinceLastUse(equipment)
+  const daysUntilDeepCharge = getDaysUntilDeepCharge(equipment)
   
-  // Check if deep charge is needed (5 days for clinic equipment)
-  // Only show deep charge option if battery is not at 100%
-  const needsDeepCharge = equipment.batteryLevel < 100 && (
-    equipment.status === "at-clinic" && equipment.lastDisconnectedAt 
-      ? (new Date().getTime() - new Date(equipment.lastDisconnectedAt).getTime()) / (1000 * 60 * 60 * 24) >= 5
-      : daysSinceUse >= 5
-  )
+  // Check if deep charge is needed (5 days for both clinic and office equipment)
+  // Both clinic and office equipment now use days-based logic
+  const needsDeepCharge = daysSinceUse >= 5
 
   // Check if equipment has critical alerts (not just any alerts)
-  // Don't show red indicator for equipment at 100% battery
-  const hasCriticalAlerts = equipment.batteryLevel < 100 && alerts.some(alert => 
+  // For equipment at clinic, show alerts based on days idle, not battery level
+  // For equipment at office, show alerts based on battery level
+  const hasCriticalAlerts = alerts.some(alert => 
     alert.equipmentId === equipment.id && 
     !alert.dismissed && 
     (alert.severity === "critical" || alert.severity === "warning") &&
@@ -198,6 +196,17 @@ export function EquipmentCard({
             </div>
           )}
 
+          {/* Days Remaining Warning */}
+          {!needsDeepCharge && daysUntilDeepCharge > 0 && daysUntilDeepCharge <= 4 && (equipment.status === "ready" || equipment.status === "at-clinic") && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+              <Clock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-blue-700">
+                <p className="font-semibold">Faltan {daysUntilDeepCharge} días</p>
+                <p>para requerir carga profunda</p>
+              </div>
+            </div>
+          )}
+
           {/* Manual Disconnection Notice */}
           {equipment.needsManualDisconnection && equipment.status === "charging" && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
@@ -240,13 +249,16 @@ export function EquipmentCard({
 
             {equipment.status === "ready" && (
               <>
-                <Button
-                  onClick={() => onStartCharging(equipment.id, needsDeepCharge)}
-                  variant="outline"
-                  className="flex-1 text-sm"
-                >
-                  {needsDeepCharge ? "Carga Profunda" : "Recargar"}
-                </Button>
+                {/* Only show recharge button if battery is not 100% or if deep charge is needed */}
+                {(equipment.batteryLevel < 100 || needsDeepCharge) && (
+                  <Button
+                    onClick={() => onStartCharging(equipment.id, needsDeepCharge)}
+                    variant="outline"
+                    className="flex-1 text-sm"
+                  >
+                    {needsDeepCharge ? "Carga Profunda" : "Recargar"}
+                  </Button>
+                )}
                 <Button onClick={() => setShowClinicDialog(true)} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-sm">
                   Enviar a Clínica
                 </Button>

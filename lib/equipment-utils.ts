@@ -52,25 +52,27 @@ export function updateEquipmentStatuses(equipment: Equipment[]): Equipment[] {
       return { ...eq, batteryLevel }
     }
 
-    // Simulate battery drain for idle equipment
-    if (eq.status === "at-clinic" && eq.lastDisconnectedAt && !eq.chargingStartTime) {
-      const lastDisconnected = new Date(eq.lastDisconnectedAt)
-      const hoursIdle = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60)
-      
-      // Battery drains 2% per hour when idle (48% per day)
-      const batteryDrain = Math.floor(hoursIdle * 2)
-      const newBatteryLevel = Math.max(0, eq.batteryLevel - batteryDrain)
-      
-      return { ...eq, batteryLevel: newBatteryLevel }
+    // Equipment at clinic maintains 100% battery until connected to patient
+    // Only drain battery when actually in use (status = "in-use")
+    if (eq.status === "at-clinic") {
+      // Keep battery at 100% when idle at clinic
+      return { ...eq, batteryLevel: 100 }
     }
 
-    // Simulate battery drain for ready equipment at office
-    if (eq.status === "ready" && eq.lastUsedDate && !eq.chargingStartTime) {
+    // Equipment ready at office maintains 100% battery until used
+    // Same behavior as clinic equipment - show days remaining instead of battery drain
+    if (eq.status === "ready") {
+      // Keep battery at 100% when idle at office
+      return { ...eq, batteryLevel: 100 }
+    }
+
+    // Simulate battery drain for equipment in use (connected to patient)
+    if (eq.status === "in-use" && eq.lastUsedDate && !eq.chargingStartTime) {
       const lastUsed = new Date(eq.lastUsedDate)
-      const hoursIdle = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60)
+      const hoursInUse = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60)
       
-      // Battery drains 1% per hour when idle at office (24% per day)
-      const batteryDrain = Math.floor(hoursIdle * 1)
+      // Battery drains 3% per hour when in use (72% per day)
+      const batteryDrain = Math.floor(hoursInUse * 3)
       const newBatteryLevel = Math.max(0, eq.batteryLevel - batteryDrain)
       
       return { ...eq, batteryLevel: newBatteryLevel }
@@ -119,19 +121,29 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
     }
 
     // Check if deep charge is needed (5 days without use)
-    // Only generate alerts for equipment that actually needs charging
-    if (eq.status === "ready" && eq.lastUsedDate && eq.batteryLevel < 100) {
-      const lastUsed = new Date(eq.lastUsedDate)
-      const daysSinceUse = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24)
+    // Generate alerts for equipment that needs deep charge based on days idle
+    if (eq.status === "ready" || eq.status === "at-clinic") {
+      let daysSinceLastActivity = 0
+      
+      // For equipment at clinic, use lastDisconnectedAt
+      if (eq.status === "at-clinic" && eq.lastDisconnectedAt) {
+        const lastDisconnected = new Date(eq.lastDisconnectedAt)
+        daysSinceLastActivity = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
+      }
+      // For equipment at office, use lastUsedDate
+      else if (eq.lastUsedDate) {
+        const lastUsed = new Date(eq.lastUsedDate)
+        daysSinceLastActivity = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24)
+      }
 
-      if (daysSinceUse >= 5) {
+      if (daysSinceLastActivity >= 5) {
         alerts.push({
           id: `${eq.id}-deep-charge-${Date.now()}`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "deep-charge-needed",
           severity: "warning",
-          message: `Equipo ${eq.code} lleva ${Math.floor(daysSinceUse)} días sin uso. Requiere carga profunda manual de 12 horas para despegar la batería`,
+          message: `Equipo ${eq.code} lleva ${Math.floor(daysSinceLastActivity)} días sin uso. Requiere carga profunda manual de 12 horas para despegar la batería`,
           timestamp: now.toISOString(),
           dismissed: false,
         })
@@ -234,36 +246,20 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       const lastDisconnected = new Date(eq.lastDisconnectedAt)
       const daysIdle = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
 
-      // Only generate alerts for equipment that actually needs attention
-      // Don't generate alerts for equipment at 100% battery
-      if (eq.batteryLevel < 100) {
-        // Only generate one alert per equipment, prioritize by importance
-        if (daysIdle >= 5) {
-          // Priority 1: Deep charge needed (most important)
-          // Use a consistent ID that doesn't change with timestamp to allow updates
-          alerts.push({
-            id: `${eq.id}-clinic-idle`,
-            equipmentId: eq.id,
-            equipmentCode: eq.code,
-            type: "clinic-idle",
-            severity: "warning",
-            message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Batería: ${eq.batteryLevel}%. Requiere carga profunda manual`,
-            timestamp: now.toISOString(),
-            dismissed: false,
-          })
-        } else if (eq.batteryLevel <= 20 && eq.batteryLevel > 0) {
-          // Priority 2: Low battery (only if not already needing deep charge)
-          alerts.push({
-            id: `${eq.id}-low-battery-clinic`,
-            equipmentId: eq.id,
-            equipmentCode: eq.code,
-            type: "overdue-charge",
-            severity: "warning",
-            message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} en **${eq.clinicName || "clínica"}** tiene batería baja (${eq.batteryLevel}%). Requiere carga urgente`,
-            timestamp: now.toISOString(),
-            dismissed: false,
-          })
-        }
+      // Generate alerts based on days idle, not battery level
+      // Equipment at clinic maintains 100% battery until connected to patient
+      if (daysIdle >= 5) {
+        // Priority 1: Deep charge needed (most important)
+        alerts.push({
+          id: `${eq.id}-clinic-idle`,
+          equipmentId: eq.id,
+          equipmentCode: eq.code,
+          type: "clinic-idle",
+          severity: "warning",
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Requiere carga profunda manual`,
+          timestamp: now.toISOString(),
+          dismissed: false,
+        })
       }
     }
   })
@@ -300,9 +296,24 @@ export function getTimeRemaining(equipment: Equipment): string {
 }
 
 export function getDaysSinceLastUse(equipment: Equipment): number {
-  if (!equipment.lastUsedDate) return 0
-
-  const lastUsed = new Date(equipment.lastUsedDate)
   const now = new Date()
-  return Math.floor((now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24))
+  
+  // For equipment at clinic, use lastDisconnectedAt
+  if (equipment.status === "at-clinic" && equipment.lastDisconnectedAt) {
+    const lastDisconnected = new Date(equipment.lastDisconnectedAt)
+    return Math.floor((now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24))
+  }
+  
+  // For equipment at office, use lastUsedDate
+  if (equipment.lastUsedDate) {
+    const lastUsed = new Date(equipment.lastUsedDate)
+    return Math.floor((now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24))
+  }
+  
+  return 0
+}
+
+export function getDaysUntilDeepCharge(equipment: Equipment): number {
+  const daysSinceLastUse = getDaysSinceLastUse(equipment)
+  return Math.max(0, 5 - daysSinceLastUse)
 }

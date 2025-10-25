@@ -6,7 +6,7 @@ import { AddEquipmentDialog } from "@/components/add-equipment-dialog"
 import { CheckInDialog } from "@/components/check-in-dialog"
 import { AlertsPanel } from "@/components/alerts-panel"
 import { Button } from "@/components/ui/button"
-import { Plus, Bell } from "lucide-react"
+import { Plus, Bell, Battery } from "lucide-react"
 import type { Equipment, Alert } from "@/types/equipment"
 import { checkAlerts, updateEquipmentStatuses } from "@/lib/equipment-utils"
 import { 
@@ -29,10 +29,36 @@ export default function Home() {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showCheckInDialog, setShowCheckInDialog] = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
+
+  // Function to retry connection
+  const retryConnection = async () => {
+    setIsLoading(true)
+    setConnectionError(null)
+    
+    try {
+      const [equipmentData, alertsData] = await Promise.all([
+        getAllEquipment(),
+        getAllAlerts()
+      ])
+      setEquipment(equipmentData)
+      setAlerts(alertsData)
+      setConnectionError(null)
+    } catch (error) {
+      console.error('Error retrying connection:', error)
+      setConnectionError('Error de conexión persistente. Por favor, verifica tu conexión a internet.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Load equipment and alerts from Supabase on mount
   useEffect(() => {
     const loadData = async () => {
+      setIsLoading(true)
+      setConnectionError(null)
+      
       try {
         const [equipmentData, alertsData] = await Promise.all([
           getAllEquipment(),
@@ -40,8 +66,15 @@ export default function Home() {
         ])
         setEquipment(equipmentData)
         setAlerts(alertsData)
+        setConnectionError(null)
       } catch (error) {
         console.error('Error loading data:', error)
+        setConnectionError('Error de conexión con la base de datos. Por favor, verifica tu conexión a internet e intenta recargar la página.')
+        // Set empty arrays as fallback
+        setEquipment([])
+        setAlerts([])
+      } finally {
+        setIsLoading(false)
       }
     }
 
@@ -92,11 +125,25 @@ export default function Home() {
   useEffect(() => {
     const updateStatus = async () => {
       try {
-        // Get fresh data from database
-        const [freshEquipment, currentAlerts] = await Promise.all([
-          getAllEquipment(),
-          getAllAlerts()
-        ])
+        // Get fresh data from database with individual error handling
+        let freshEquipment: Equipment[] = []
+        let currentAlerts: Alert[] = []
+        
+        try {
+          freshEquipment = await getAllEquipment()
+        } catch (error) {
+          console.error('Error fetching equipment in updateStatus:', error)
+          // Use current equipment state as fallback
+          freshEquipment = equipment
+        }
+        
+        try {
+          currentAlerts = await getAllAlerts()
+        } catch (error) {
+          console.error('Error fetching alerts in updateStatus:', error)
+          // Use current alerts state as fallback
+          currentAlerts = alerts
+        }
         
         // Update equipment statuses with fresh data
         const updatedEquipment = updateEquipmentStatuses(freshEquipment)
@@ -105,49 +152,61 @@ export default function Home() {
         // Generate fresh alerts based on current equipment status
         const freshAlerts = checkAlerts(updatedEquipment)
         
-        // Get current alerts from database
-        const currentAlertsFromDB = await getAllAlerts()
-        
-        // Create a simple approach: replace all active alerts with fresh ones
-        const activeAlertsFromDB = currentAlertsFromDB.filter(alert => !alert.dismissed)
-        
-        // Delete all active alerts that are no longer relevant
-        const alertsToDelete = activeAlertsFromDB.filter(existingAlert => 
-          !freshAlerts.some(freshAlert => freshAlert.id === existingAlert.id)
-        ).map(alert => alert.id)
-        
-        if (alertsToDelete.length > 0) {
-          await deleteMultipleAlerts(alertsToDelete)
+        // Only proceed with alert updates if we have a successful connection
+        if (freshEquipment.length > 0) {
+          try {
+            // Get current alerts from database
+            const currentAlertsFromDB = await getAllAlerts()
+            
+            // Create a simple approach: replace all active alerts with fresh ones
+            const activeAlertsFromDB = currentAlertsFromDB.filter(alert => !alert.dismissed)
+            
+            // Delete all active alerts that are no longer relevant
+            const alertsToDelete = activeAlertsFromDB.filter(existingAlert => 
+              !freshAlerts.some(freshAlert => freshAlert.id === existingAlert.id)
+            ).map(alert => alert.id)
+            
+            if (alertsToDelete.length > 0) {
+              await deleteMultipleAlerts(alertsToDelete)
+            }
+            
+            // Create or update alerts
+            const alertsToCreate = freshAlerts.filter(freshAlert => 
+              !activeAlertsFromDB.some(existingAlert => existingAlert.id === freshAlert.id)
+            )
+            
+            const alertsToUpdate = freshAlerts.filter(freshAlert => {
+              const existingAlert = activeAlertsFromDB.find(existing => existing.id === freshAlert.id)
+              return existingAlert && existingAlert.message !== freshAlert.message
+            })
+            
+            // Create new alerts
+            if (alertsToCreate.length > 0) {
+              await createMultipleAlerts(alertsToCreate)
+            }
+            
+            // Update existing alerts
+            for (const alertToUpdate of alertsToUpdate) {
+              await updateAlert(alertToUpdate.id, {
+                message: alertToUpdate.message,
+                timestamp: alertToUpdate.timestamp
+              })
+            }
+            
+            // Refresh alerts from database
+            const updatedAlerts = await getAllAlerts()
+            setAlerts(updatedAlerts)
+          } catch (alertError) {
+            console.error('Error updating alerts:', alertError)
+            // Fallback to local generation with current state
+            setAlerts(freshAlerts)
+          }
+        } else {
+          // If no equipment data, just use local alerts
+          setAlerts(freshAlerts)
         }
-        
-        // Create or update alerts
-        const alertsToCreate = freshAlerts.filter(freshAlert => 
-          !activeAlertsFromDB.some(existingAlert => existingAlert.id === freshAlert.id)
-        )
-        
-        const alertsToUpdate = freshAlerts.filter(freshAlert => {
-          const existingAlert = activeAlertsFromDB.find(existing => existing.id === freshAlert.id)
-          return existingAlert && existingAlert.message !== freshAlert.message
-        })
-        
-        // Create new alerts
-        if (alertsToCreate.length > 0) {
-          await createMultipleAlerts(alertsToCreate)
-        }
-        
-        // Update existing alerts
-        for (const alertToUpdate of alertsToUpdate) {
-          await updateAlert(alertToUpdate.id, {
-            message: alertToUpdate.message,
-            timestamp: alertToUpdate.timestamp
-          })
-        }
-        
-        // Refresh alerts from database
-        const updatedAlerts = await getAllAlerts()
-        setAlerts(updatedAlerts)
       } catch (error) {
-        console.error('Error updating alerts:', error)
+        console.error('Error updating status:', error)
         // Fallback to local generation with current state
         const updatedEquipment = updateEquipmentStatuses(equipment)
         setEquipment(updatedEquipment)
@@ -407,6 +466,39 @@ export default function Home() {
 
 
   const activeAlerts = alerts.filter((a) => !a.dismissed)
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
+            <Battery className="h-8 w-8 text-white animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Cargando...</h2>
+          <p className="text-gray-600">Conectando con la base de datos</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show connection error
+  if (connectionError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="w-16 h-16 bg-red-100 rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
+            <Bell className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error de Conexión</h2>
+          <p className="text-gray-600 mb-6">{connectionError}</p>
+          <Button onClick={retryConnection} className="bg-blue-600 hover:bg-blue-700">
+            Reintentar Conexión
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
