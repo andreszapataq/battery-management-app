@@ -174,12 +174,12 @@ export function EquipmentCard({
           </div>
 
           {(equipment.status === "in-use" || equipment.status === "at-clinic" || (equipment.status === "charging" && equipment.location === "clinic")) && equipment.clinicName && (
-            <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 rounded-lg p-2 border border-blue-200">
-              <Building2 className="h-4 w-4" />
+            <div className="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 rounded-md p-2 border border-gray-200">
+              <Building2 className="h-4 w-4 text-gray-600" />
               <div>
-                <span className="font-medium">{equipment.clinicName}</span>
+                <span className="font-medium text-gray-800">{equipment.clinicName}</span>
                 {equipment.clinicCity && (
-                  <span className="text-blue-600 ml-1">- {equipment.clinicCity}</span>
+                  <span className="text-gray-600 ml-1">- {equipment.clinicCity}</span>
                 )}
               </div>
             </div>
