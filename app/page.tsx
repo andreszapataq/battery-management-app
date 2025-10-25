@@ -332,7 +332,7 @@ export default function Home() {
         location: "clinic" as const,
         clinicName,
         clinicCity,
-        lastDisconnectedAt: new Date().toISOString(),
+        // NO resetear lastDisconnectedAt - mantener el conteo regresivo
       }
 
       const updatedEquipment = await updateEquipment(equipmentId, newValue)
