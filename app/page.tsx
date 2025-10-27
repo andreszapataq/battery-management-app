@@ -6,7 +6,8 @@ import { AddEquipmentDialog } from "@/components/add-equipment-dialog"
 import { CheckInDialog } from "@/components/check-in-dialog"
 import { AlertsPanel } from "@/components/alerts-panel"
 import { Button } from "@/components/ui/button"
-import { Plus, Bell } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Plus, Bell, Search, X } from "lucide-react"
 import type { Equipment, Alert } from "@/types/equipment"
 import { checkAlerts, updateEquipmentStatuses } from "@/lib/equipment-utils"
 import { 
@@ -30,6 +31,7 @@ export default function Home() {
   const [showCheckInDialog, setShowCheckInDialog] = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Function to retry connection
   const retryConnection = async () => {
@@ -444,6 +446,20 @@ export default function Home() {
 
   const activeAlerts = alerts.filter((a) => !a.dismissed)
 
+  // Filter equipment based on search query
+  const filteredEquipment = searchQuery.trim() === "" 
+    ? equipment 
+    : equipment.filter((eq) => {
+        const query = searchQuery.toLowerCase()
+        return (
+          eq.code.toLowerCase().includes(query) ||
+          eq.model.toLowerCase().includes(query) ||
+          eq.lot.toLowerCase().includes(query) ||
+          eq.clinicName?.toLowerCase().includes(query) ||
+          eq.clinicCity?.toLowerCase().includes(query)
+        )
+      })
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
@@ -480,7 +496,36 @@ export default function Home() {
                 Sistema de gestión de baterías para equipos de terapia de presión negativa
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 lg:gap-3">
+          
+          {/* Search Bar */}
+          <div className="mt-4">
+            <div className="relative max-w-2xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Buscar por código, modelo, lote, clínica o ciudad..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-10 text-gray-900 placeholder:text-gray-400"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <div className="mt-2 text-sm text-gray-600">
+                Mostrando <span className="font-semibold text-blue-600">{filteredEquipment.length}</span> de {equipment.length} equipos
+              </div>
+            )}
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="mt-4 flex flex-wrap gap-2 lg:gap-3">
               <Button
                 variant="outline"
                 size="default"
@@ -544,7 +589,7 @@ export default function Home() {
 
         {/* Equipment Dashboard */}
         <EquipmentDashboard
-          equipment={equipment}
+          equipment={filteredEquipment}
           alerts={alerts}
           onMarkCharged={handleMarkCharged}
           onStartCharging={handleStartCharging}
