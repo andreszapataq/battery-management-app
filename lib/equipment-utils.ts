@@ -120,30 +120,42 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       }
     }
 
-    // Check if deep charge is needed (5 days without use)
-    // Generate alerts for equipment that needs deep charge based on days idle
-    if (eq.status === "ready" || eq.status === "at-clinic") {
-      let daysSinceLastActivity = 0
-      
-      // For equipment at clinic, use lastDisconnectedAt
-      if (eq.status === "at-clinic" && eq.lastDisconnectedAt) {
-        const lastDisconnected = new Date(eq.lastDisconnectedAt)
-        daysSinceLastActivity = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
+    // Check if deep charge is needed (5 days without use) - ONLY for equipment at clinic
+    // Equipment at office should not generate alerts here, they'll be handled differently
+    // We only generate detailed alerts for clinic equipment
+    if (eq.status === "at-clinic" && eq.lastDisconnectedAt) {
+      const lastDisconnected = new Date(eq.lastDisconnectedAt)
+      const daysIdle = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
+
+      // Only generate alert if 5+ days have passed
+      if (daysIdle >= 5) {
+        alerts.push({
+          id: `${eq.id}-clinic-idle`,
+          equipmentId: eq.id,
+          equipmentCode: eq.code,
+          type: "clinic-idle",
+          severity: "warning",
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Requiere carga profunda manual`,
+          timestamp: now.toISOString(),
+          dismissed: false,
+        })
       }
-      // For equipment at office, use lastUsedDate
-      else if (eq.lastUsedDate) {
-        const lastUsed = new Date(eq.lastUsedDate)
-        daysSinceLastActivity = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24)
-      }
+    }
+    
+    // For office equipment (ready status), use a simpler alert
+    // Only generate if 5+ days have passed
+    if (eq.status === "ready" && eq.lastUsedDate) {
+      const lastUsed = new Date(eq.lastUsedDate)
+      const daysSinceLastActivity = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24)
 
       if (daysSinceLastActivity >= 5) {
         alerts.push({
-          id: `${eq.id}-deep-charge-${Date.now()}`,
+          id: `${eq.id}-office-idle`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "deep-charge-needed",
           severity: "warning",
-          message: `Equipo ${eq.code} lleva ${Math.floor(daysSinceLastActivity)} días sin uso. Requiere carga profunda manual de 12 horas para despegar la batería`,
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysSinceLastActivity)} días** en oficina sin uso. Requiere carga profunda manual de 12 horas para despegar la batería`,
           timestamp: now.toISOString(),
           dismissed: false,
         })
@@ -242,26 +254,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       }
     }
 
-    if (eq.status === "at-clinic" && eq.lastDisconnectedAt) {
-      const lastDisconnected = new Date(eq.lastDisconnectedAt)
-      const daysIdle = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
-
-      // Generate alerts based on days idle, not battery level
-      // Equipment at clinic maintains 100% battery until connected to patient
-      if (daysIdle >= 5) {
-        // Priority 1: Deep charge needed (most important)
-        alerts.push({
-          id: `${eq.id}-clinic-idle`,
-          equipmentId: eq.id,
-          equipmentCode: eq.code,
-          type: "clinic-idle",
-          severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Requiere carga profunda manual`,
-          timestamp: now.toISOString(),
-          dismissed: false,
-        })
-      }
-    }
+    // REMOVED DUPLICATE: This alert is already generated above in the main check
   })
 
   return alerts
