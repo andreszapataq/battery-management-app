@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Battery, BatteryCharging, Clock, MapPin, AlertTriangle, Building2, CheckCircle, Power } from "lucide-react"
-import { getChargingProgress, getTimeRemaining, getDaysSinceLastUse, getDaysUntilDeepCharge } from "@/lib/equipment-utils"
+import { getChargingProgress, getTimeRemaining, getDaysSinceLastUse, getDaysUntilDeepCharge, getDaysSinceLastCharge } from "@/lib/equipment-utils"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -39,23 +39,22 @@ export function EquipmentCard({
 
   const progress = getChargingProgress(equipment)
   const timeRemaining = getTimeRemaining(equipment)
-  const daysSinceUse = getDaysSinceLastUse(equipment)
+  const daysSinceCharge = getDaysSinceLastCharge(equipment)
   const daysUntilDeepCharge = getDaysUntilDeepCharge(equipment)
   
   // Check if deep charge is needed (5 days for both clinic and office equipment)
   // Both clinic and office equipment now use days-based logic
-  const needsDeepCharge = daysSinceUse >= 5
+  // IMPORTANT: Do NOT show "needs deep charge" if equipment just completed deep charge
+  // (100% battery and recently charged within 24 hours)
+  const now = new Date()
+  const recentlyCompletedDeepCharge = equipment.lastChargedDate && 
+    equipment.batteryLevel === 100 && 
+    (now.getTime() - new Date(equipment.lastChargedDate).getTime()) < (24 * 60 * 60 * 1000)
+  
+  const needsDeepCharge = daysSinceCharge >= 5 && !recentlyCompletedDeepCharge
 
-  // Check if equipment has critical alerts (not just any alerts)
-  // For equipment at clinic, show alerts based on days idle, not battery level
-  // For equipment at office, show alerts based on battery level
-  const hasCriticalAlerts = alerts.some(alert => 
-    alert.equipmentId === equipment.id && 
-    !alert.dismissed && 
-    (alert.severity === "critical" || alert.severity === "warning") &&
-    // Don't show red indicator for equipment that's already charging (they're being addressed)
-    !(equipment.status === "charging" && alert.type === "clinic-idle")
-  )
+  // Indicador rojo SOLO si realmente requiere carga profunda según la lógica de días
+  const hasCriticalAlerts = needsDeepCharge && equipment.status !== "in-use" && equipment.status !== "charging"
 
   const statusConfig = {
     charging: { label: "Cargando", color: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -186,18 +185,18 @@ export function EquipmentCard({
           )}
 
           {/* Deep Charge Warning */}
-          {needsDeepCharge && equipment.status === "ready" && (
+          {needsDeepCharge && (equipment.status === "ready" || equipment.status === "at-clinic") && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs text-orange-700">
                 <p className="font-semibold">Requiere carga profunda</p>
-                <p>{Math.floor(daysSinceUse)} días sin uso</p>
+                <p>{Math.floor(daysSinceCharge)} días desde la última carga</p>
               </div>
             </div>
           )}
 
           {/* Days Remaining Warning */}
-          {!needsDeepCharge && daysUntilDeepCharge > 0 && daysUntilDeepCharge <= 4 && (equipment.status === "ready" || equipment.status === "at-clinic") && (
+          {!needsDeepCharge && daysUntilDeepCharge >= 1 && daysUntilDeepCharge <= 5 && (equipment.status === "ready" || equipment.status === "at-clinic") && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
               <Clock className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs text-blue-700">
@@ -231,7 +230,7 @@ export function EquipmentCard({
 
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-2 pt-2">
-            {equipment.status === "charging" && progress >= 100 && (
+            {equipment.status === "charging" && progress >= 100 && !equipment.needsManualDisconnection && (
               <Button onClick={() => onMarkCharged(equipment.id)} className="flex-1 bg-green-600 hover:bg-green-700 text-sm">
                 Marcar Cargado
               </Button>

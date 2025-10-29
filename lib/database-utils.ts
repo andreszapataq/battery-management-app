@@ -168,6 +168,9 @@ export async function updateEquipment(id: string, updates: Partial<Equipment>): 
   if (updates.clinicName !== undefined) updateData.clinic_name = updates.clinicName || null
   if (updates.clinicCity !== undefined) updateData.clinic_city = updates.clinicCity || null
 
+  // Log update data for debugging
+  console.log('Updating equipment:', id, updateData)
+
   const { data, error } = await supabase
     .from('equipment')
     .update(updateData)
@@ -176,8 +179,20 @@ export async function updateEquipment(id: string, updates: Partial<Equipment>): 
     .single()
 
   if (error) {
-    console.error('Error updating equipment:', error)
-    throw error
+    // Log full error details
+    const errorDetails = {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    }
+    console.error('Error updating equipment:', errorDetails)
+    console.error('Update data attempted:', JSON.stringify(updateData, null, 2))
+    throw new Error(`Error updating equipment: ${error.message || JSON.stringify(errorDetails)}`)
+  }
+
+  if (!data) {
+    throw new Error(`No data returned after updating equipment ${id}`)
   }
 
   return convertEquipmentRowToEquipment(data)
@@ -393,32 +408,128 @@ export async function createAlert(alert: Omit<Alert, 'id' | 'createdAt' | 'updat
   return convertAlertRowToAlert(data)
 }
 
-export async function createMultipleAlerts(alerts: Omit<Alert, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<Alert[]> {
+export async function createMultipleAlerts(alerts: Omit<Alert, 'createdAt' | 'updatedAt'>[]): Promise<Alert[]> {
   if (alerts.length === 0) return []
 
-  const alertData = alerts.map(alert => ({
-    equipment_id: alert.equipmentId,
-    equipment_code: alert.equipmentCode,
-    type: alert.type,
-    severity: alert.severity,
-    message: alert.message,
-    timestamp: alert.timestamp,
-    dismissed: alert.dismissed,
-    dismissed_at: alert.dismissedAt || null,
-    dismissed_by: alert.dismissedBy || null,
-  }))
+  const results: Alert[] = []
+  
+  // Insert alerts one by one to handle duplicates gracefully
+  for (const alert of alerts) {
+    try {
+      // Validate alert has required fields
+      if (!alert.id || !alert.equipmentId || !alert.equipmentCode || !alert.type || !alert.severity) {
+        console.warn('Skipping alert with missing required fields:', alert)
+        continue
+      }
 
-  const { data, error } = await supabase
-    .from('alerts')
-    .insert(alertData)
-    .select()
+      // First check if alert already exists to avoid unnecessary operations
+      const { data: existing } = await supabase
+        .from('alerts')
+        .select('id')
+        .eq('id', alert.id)
+        .single()
 
-  if (error) {
-    console.error('Error creating multiple alerts:', error)
-    throw error
+      let data = null
+      let error = null
+
+      if (existing) {
+        // Update existing alert
+        const updateResult = await supabase
+          .from('alerts')
+          .update({
+            equipment_id: alert.equipmentId,
+            equipment_code: alert.equipmentCode,
+            type: alert.type,
+            severity: alert.severity,
+            message: alert.message,
+            timestamp: alert.timestamp,
+            dismissed: alert.dismissed || false,
+            dismissed_at: alert.dismissedAt || null,
+            dismissed_by: alert.dismissedBy || null,
+          })
+          .eq('id', alert.id)
+          .select()
+          .single()
+        
+        data = updateResult.data
+        error = updateResult.error
+      } else {
+        // Insert new alert
+        const insertResult = await supabase
+          .from('alerts')
+          .insert({
+            id: alert.id,
+            equipment_id: alert.equipmentId,
+            equipment_code: alert.equipmentCode,
+            type: alert.type,
+            severity: alert.severity,
+            message: alert.message,
+            timestamp: alert.timestamp,
+            dismissed: alert.dismissed || false,
+            dismissed_at: alert.dismissedAt || null,
+            dismissed_by: alert.dismissedBy || null,
+          })
+          .select()
+          .single()
+        
+        data = insertResult.data
+        error = insertResult.error
+      }
+
+      if (error) {
+        // Log the full error object to see what's happening
+        const errorDetails = {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        }
+        
+        // If it's a duplicate key error or unique violation, skip silently
+        if (error.code === '23505' || error.code === 'PGRST116' || 
+            error.code === '23503' || // Foreign key violation
+            error.code === '42P01' || // Table doesn't exist
+            (typeof error.message === 'string' && 
+             (error.message.includes('duplicate') || 
+              error.message.includes('unique') ||
+              error.message.includes('violates') ||
+              error.message.includes('constraint')))) {
+          // Alert already exists or constraint violation - skip silently
+          continue
+        } else {
+          // Log error but use console.warn to avoid breaking the UI
+          console.warn(`Error ${existing ? 'updating' : 'inserting'} alert ${alert.id}:`, errorDetails)
+          console.warn('Alert data:', JSON.stringify({
+            id: alert.id,
+            equipment_id: alert.equipmentId,
+            type: alert.type,
+            severity: alert.severity,
+          }, null, 2))
+          // Don't throw - continue processing other alerts
+        }
+      } else if (data) {
+        results.push(convertAlertRowToAlert(data))
+      }
+    } catch (err) {
+      // Skip errors silently - we want the app to continue working
+      // Log for debugging but don't throw
+      if (err instanceof Error) {
+        if (err.message.includes('duplicate') || 
+            err.message.includes('unique') ||
+            err.message.includes('violates') ||
+            err.message.includes('constraint')) {
+          // These are expected for duplicates - skip silently
+          continue
+        }
+        // Log unexpected errors but don't break the flow
+        console.warn(`Unexpected error upserting alert ${alert.id}:`, err.message)
+      } else {
+        console.warn(`Unexpected error upserting alert ${alert.id}:`, err)
+      }
+    }
   }
-
-  return data.map(convertAlertRowToAlert)
+  
+  return results
 }
 
 export async function deleteAlert(id: string): Promise<void> {

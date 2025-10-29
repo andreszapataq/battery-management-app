@@ -12,28 +12,14 @@ export function updateEquipmentStatuses(equipment: Equipment[]): Equipment[] {
 
       // Auto-complete charging when target time is reached
       if (hoursCharging >= targetHours && batteryLevel >= 100) {
-        // If it's a deep charge at clinic, implement grace period
+        // If it's a deep charge at clinic, mark as ready for manual disconnection
         if (eq.isDeepCharge && eq.location === "clinic") {
-          // Grace period: 2 hours after completion (14 hours total)
-          if (hoursCharging >= 14) {
-            // Auto-disconnect after grace period
-            return {
-              ...eq,
-              status: "at-clinic" as const,
-              batteryLevel: 100,
-              chargingStartTime: null,
-              lastChargedDate: now.toISOString(),
-              lastUsedDate: now.toISOString(), // Reset the days counter
-              isDeepCharge: false,
-              needsManualDisconnection: false,
-            }
-          } else {
-            // Still in grace period - mark as completed but keep charging
-            return {
-              ...eq,
-              batteryLevel: 100,
-              needsManualDisconnection: true,
-            }
+          // Mark as completed - waiting for manual disconnection
+          // NO auto-disconnect - must be done manually
+          return {
+            ...eq,
+            batteryLevel: 100,
+            needsManualDisconnection: true,
           }
         } else {
           // Normal charging at office - immediate completion
@@ -96,7 +82,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       if (hoursCharging >= targetHours) {
         if (eq.isDeepCharge) {
           alerts.push({
-            id: `${eq.id}-deep-charge-complete-${Date.now()}`,
+            id: `${eq.id}-deep-charge-complete`,
             equipmentId: eq.id,
             equipmentCode: eq.code,
             type: "deep-charge-complete",
@@ -107,7 +93,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
           })
         } else {
           alerts.push({
-            id: `${eq.id}-charge-complete-${Date.now()}`,
+            id: `${eq.id}-charge-complete`,
             equipmentId: eq.id,
             equipmentCode: eq.code,
             type: "charge-complete",
@@ -120,42 +106,39 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       }
     }
 
-    // Check if deep charge is needed (5 days without use) - ONLY for equipment at clinic
-    // Equipment at office should not generate alerts here, they'll be handled differently
-    // We only generate detailed alerts for clinic equipment
-    if (eq.status === "at-clinic" && eq.lastDisconnectedAt) {
-      const lastDisconnected = new Date(eq.lastDisconnectedAt)
-      const daysIdle = (now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24)
+    // For clinic equipment (at-clinic), also base on last charge (manual disconnect sets lastChargedDate)
+    // IMPORTANT: Do NOT show alert if equipment just completed deep charge (within last 24 hours)
+    if (eq.status === "at-clinic") {
+      const daysSinceLastCharge = getDaysSinceLastCharge(eq)
 
-      // Only generate alert if 5+ days have passed
-      if (daysIdle >= 5) {
+      const recentlyCompletedDeepCharge = eq.lastChargedDate && eq.batteryLevel === 100 && 
+        (now.getTime() - new Date(eq.lastChargedDate).getTime()) < (24 * 60 * 60 * 1000)
+
+      if (daysSinceLastCharge >= 5 && !recentlyCompletedDeepCharge) {
         alerts.push({
           id: `${eq.id}-clinic-idle`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "clinic-idle",
           severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysIdle)} días** desconectado en **${eq.clinicName || "clínica"}**. Requiere carga profunda manual`,
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysSinceLastCharge)} días** desde la última carga en **${eq.clinicName || "clínica"}**. Requiere carga profunda manual`,
           timestamp: now.toISOString(),
           dismissed: false,
         })
       }
     }
     
-    // For office equipment (ready status), use a simpler alert
-    // Only generate if 5+ days have passed
-    if (eq.status === "ready" && eq.lastUsedDate) {
-      const lastUsed = new Date(eq.lastUsedDate)
-      const daysSinceLastActivity = (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24)
-
-      if (daysSinceLastActivity >= 5) {
+    // For office equipment (ready status), alert based on days since last charge
+    if (eq.status === "ready") {
+      const daysSinceLastCharge = getDaysSinceLastCharge(eq)
+      if (daysSinceLastCharge >= 5) {
         alerts.push({
           id: `${eq.id}-office-idle`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "deep-charge-needed",
           severity: "warning",
-          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysSinceLastActivity)} días** en oficina sin uso. Requiere carga profunda manual de 12 horas para despegar la batería`,
+          message: `Equipo ${eq.code} (${eq.model}) - Lote: ${eq.lot} lleva **${Math.floor(daysSinceLastCharge)} días** desde la última carga en oficina. Requiere carga profunda manual de 12 horas para despegar la batería`,
           timestamp: now.toISOString(),
           dismissed: false,
         })
@@ -175,7 +158,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
       
       if (hoursCharging < 12 && !isNewEquipment) {
         alerts.push({
-          id: `${eq.id}-deep-charging-${Date.now()}`,
+          id: `${eq.id}-deep-charging`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "battery-calibration",
@@ -198,8 +181,8 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
         equipmentId: eq.id,
         equipmentCode: eq.code,
         type: "manual-disconnect",
-        severity: hoursCharging >= 13 ? "critical" : "warning", // Critical after 13 hours
-        message: `Equipo ${eq.code} completó carga profunda a las ${completionTime.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })}. ${hoursCharging >= 13 ? 'URGENTE: ' : ''}Desconectar manualmente para liberar el cargador${hoursCharging >= 13 ? ' (auto-desconexión en 1 hora)' : ''}`,
+        severity: "warning",
+        message: `Equipo ${eq.code} completó carga profunda a las ${completionTime.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })}. Desconectar manualmente para liberar el cargador y reiniciar el contador de días`,
         timestamp: now.toISOString(),
         dismissed: false,
       })
@@ -207,6 +190,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
 
     // Check if deep charge completed and battery calibration is done
     // Only show calibration success alerts for equipment that actually went through a deep charge process
+    // IMPORTANT: Only for office equipment (ready status), not for clinic equipment
     if (eq.status === "ready" && eq.lastChargedDate && eq.lastUsedDate) {
       const lastCharged = new Date(eq.lastChargedDate)
       const lastUsed = new Date(eq.lastUsedDate)
@@ -242,7 +226,7 @@ export function checkAlerts(equipment: Equipment[]): Alert[] {
 
       if (hoursCharging > targetHours + 2) {
         alerts.push({
-          id: `${eq.id}-overdue-${Date.now()}`,
+          id: `${eq.id}-overdue-charge`,
           equipmentId: eq.id,
           equipmentCode: eq.code,
           type: "overdue-charge",
@@ -291,10 +275,16 @@ export function getTimeRemaining(equipment: Equipment): string {
 export function getDaysSinceLastUse(equipment: Equipment): number {
   const now = new Date()
   
-  // For equipment at clinic, use lastDisconnectedAt
-  if (equipment.status === "at-clinic" && equipment.lastDisconnectedAt) {
-    const lastDisconnected = new Date(equipment.lastDisconnectedAt)
-    return Math.floor((now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24))
+  // For equipment at clinic, prioritize lastDisconnectedAt (after manual disconnect from deep charge)
+  // Otherwise use lastUsedDate (for normal operations)
+  if (equipment.status === "at-clinic") {
+    if (equipment.lastDisconnectedAt) {
+      const lastDisconnected = new Date(equipment.lastDisconnectedAt)
+      return Math.floor((now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24))
+    } else if (equipment.lastUsedDate) {
+      const lastUsed = new Date(equipment.lastUsedDate)
+      return Math.floor((now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24))
+    }
   }
   
   // For equipment at office, use lastUsedDate
@@ -307,6 +297,25 @@ export function getDaysSinceLastUse(equipment: Equipment): number {
 }
 
 export function getDaysUntilDeepCharge(equipment: Equipment): number {
-  const daysSinceLastUse = getDaysSinceLastUse(equipment)
-  return Math.max(0, 5 - daysSinceLastUse)
+  const daysSinceLastCharge = getDaysSinceLastCharge(equipment)
+  return Math.max(0, 5 - daysSinceLastCharge)
+}
+
+// NEW: days since the last full charge (deep or normal)
+export function getDaysSinceLastCharge(equipment: Equipment): number {
+  const now = new Date()
+  if (equipment.lastChargedDate) {
+    const lastCharged = new Date(equipment.lastChargedDate)
+    return Math.floor((now.getTime() - lastCharged.getTime()) / (1000 * 60 * 60 * 24))
+  }
+  // Fallback: if never charged recorded, use lastUsed/lastDisconnected as proxy
+  if (equipment.status === "at-clinic" && equipment.lastDisconnectedAt) {
+    const lastDisconnected = new Date(equipment.lastDisconnectedAt)
+    return Math.floor((now.getTime() - lastDisconnected.getTime()) / (1000 * 60 * 60 * 24))
+  }
+  if (equipment.lastUsedDate) {
+    const lastUsed = new Date(equipment.lastUsedDate)
+    return Math.floor((now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24))
+  }
+  return 0
 }

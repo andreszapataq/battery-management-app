@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { EquipmentDashboard } from "@/components/equipment-dashboard"
 import { AddEquipmentDialog } from "@/components/add-equipment-dialog"
 import { CheckInDialog } from "@/components/check-in-dialog"
@@ -27,6 +27,15 @@ import { supabase } from "@/lib/supabase"
 export default function Home() {
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
+  // Evitar parpadeos: suprimir actualizaciones en tiempo real mientras sincronizamos alertas con la BD
+  const isSyncingAlertsRef = useRef(false)
+  // Mantener referencia a las alertas actuales para evitar que RT las borre si la BD está vacía
+  const alertsRef = useRef<Alert[]>([])
+
+  const safeSetAlerts = (next: Alert[]) => {
+    setAlerts(next)
+    alertsRef.current = next
+  }
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showCheckInDialog, setShowCheckInDialog] = useState(false)
   const [showAlerts, setShowAlerts] = useState(false)
@@ -85,8 +94,12 @@ export default function Home() {
         { event: '*', schema: 'public', table: 'alerts' },
         async () => {
           try {
+            // Si estamos sincronizando alertas (borrando/creando en bloque), no refrescar desde RT
+            if (isSyncingAlertsRef.current) return
             const alertsData = await getAllAlerts()
-            setAlerts(alertsData)
+            // Si la BD devuelve 0 pero la app ya tiene alertas calculadas, mantener las locales
+            if (alertsData.length === 0 && alertsRef.current.length > 0) return
+            safeSetAlerts(alertsData)
           } catch (error) {
             console.error('Error syncing alerts:', error)
           }
@@ -130,6 +143,8 @@ export default function Home() {
         
         // Generate fresh alerts based on current equipment status
         const freshAlerts = checkAlerts(updatedEquipment)
+        // Optimistically reflect alerts in UI while syncing with DB
+        safeSetAlerts(freshAlerts)
         
         // Only proceed with alert updates if we have a successful connection
         if (freshEquipment.length > 0) {
@@ -146,6 +161,7 @@ export default function Home() {
             ).map(alert => alert.id)
             
             if (alertsToDelete.length > 0) {
+              isSyncingAlertsRef.current = true
               await deleteMultipleAlerts(alertsToDelete)
             }
             
@@ -172,17 +188,19 @@ export default function Home() {
               })
             }
             
-            // Refresh alerts from database
+            // Refresh alerts from database. If DB returns none (e.g., RLS/dup issues), fallback to locally generated
             const updatedAlerts = await getAllAlerts()
-            setAlerts(updatedAlerts)
+            safeSetAlerts(updatedAlerts.length > 0 ? updatedAlerts : freshAlerts)
+            isSyncingAlertsRef.current = false
           } catch (alertError) {
             console.error('Error updating alerts:', alertError)
             // Fallback to local generation with current state
-            setAlerts(freshAlerts)
+            safeSetAlerts(freshAlerts)
+            isSyncingAlertsRef.current = false
           }
         } else {
           // If no equipment data, just use local alerts
-          setAlerts(freshAlerts)
+          safeSetAlerts(freshAlerts)
         }
       } catch (error) {
         console.error('Error updating status:', error)
@@ -190,7 +208,7 @@ export default function Home() {
         const updatedEquipment = updateEquipmentStatuses(equipment)
         setEquipment(updatedEquipment)
         const newAlerts = checkAlerts(updatedEquipment)
-        setAlerts(newAlerts)
+        safeSetAlerts(newAlerts)
       }
     }
 
@@ -298,11 +316,16 @@ export default function Home() {
 
       // If equipment is at clinic, connect to patient
       if (equipmentToUpdate.status === "at-clinic") {
+        const now = new Date()
         newValue = {
           ...equipmentToUpdate,
           status: "in-use" as const,
-          lastUsedDate: new Date().toISOString(),
-          lastDisconnectedAt: null,
+          lastUsedDate: now.toISOString(),
+          lastDisconnectedAt: null, // Reset disconnected counter when connecting to patient
+          // Preserve clinic information
+          clinicName: equipmentToUpdate.clinicName,
+          clinicCity: equipmentToUpdate.clinicCity,
+          location: "clinic" as const,
         }
       } else {
         // Otherwise start charging
@@ -418,28 +441,39 @@ export default function Home() {
   const handleManualDisconnect = async (equipmentId: string) => {
     try {
       const equipmentToUpdate = equipment.find(eq => eq.id === equipmentId)
-      if (!equipmentToUpdate) return
+      if (!equipmentToUpdate) {
+        console.error('Equipment not found:', equipmentId)
+        return
+      }
 
+      const now = new Date()
       const oldValue = { ...equipmentToUpdate }
-      const newValue = {
-        ...equipmentToUpdate,
+      
+      // Only send the fields that need to be updated
+      const updates: Partial<Equipment> = {
         status: "at-clinic" as const,
         batteryLevel: 100,
         chargingStartTime: null,
-        lastChargedDate: new Date().toISOString(),
-        lastUsedDate: new Date().toISOString(), // Reset the days counter
+        lastChargedDate: now.toISOString(),
+        lastUsedDate: now.toISOString(), // Reset for general tracking
+        lastDisconnectedAt: now.toISOString(), // CRITICAL: Set this to start the 5-day countdown after manual disconnect
         isDeepCharge: false,
         needsManualDisconnection: false,
-        // Preserve clinic information
-        clinicName: equipmentToUpdate.clinicName,
-        clinicCity: equipmentToUpdate.clinicCity,
+        location: "clinic" as const,
+        // Preserve clinic information - equipment stays at clinic
+        clinicName: equipmentToUpdate.clinicName || undefined,
+        clinicCity: equipmentToUpdate.clinicCity || undefined,
       }
 
-      const updatedEquipment = await updateEquipment(equipmentId, newValue)
+      const updatedEquipment = await updateEquipment(equipmentId, updates)
       setEquipment(equipment.map(eq => eq.id === equipmentId ? updatedEquipment : eq))
-      await logEquipmentChange(equipmentId, 'manual_disconnect', oldValue, newValue, `Desconexión manual después de carga profunda completada en ${equipmentToUpdate.clinicName} - ${equipmentToUpdate.clinicCity}`)
+      
+      const newValue = { ...equipmentToUpdate, ...updates }
+      await logEquipmentChange(equipmentId, 'manual_disconnect', oldValue, newValue, `Desconexión manual después de carga profunda completada en ${equipmentToUpdate.clinicName || 'clínica'} - ${equipmentToUpdate.clinicCity || ''}. Contador de 5 días iniciado`)
     } catch (error) {
       console.error('Error with manual disconnect:', error)
+      // Show user-friendly error message
+      alert(error instanceof Error ? error.message : 'Error al desconectar el equipo. Por favor, intenta nuevamente.')
     }
   }
 
